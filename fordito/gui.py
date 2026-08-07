@@ -328,12 +328,11 @@ class App(ctk.CTk):
         self.path_entry.configure(placeholder_text=(
             "Válassz mappát, minden MKV lefordul benne…" if self.mode == "folder"
             else "Válassz MKV vagy felirat fájlt…"))
-        if self.mode == "folder":
-            self.track_label.grid_remove()
-            self.track_menu.grid_remove()
-        else:
-            self.track_label.grid()
-            self.track_menu.grid()
+        # A sávválasztó mindkét módban látszik. Mappás módban a mappa első
+        # fájljának sávjait kínáljuk, és a választott sávot minden fájlban
+        # megkeressük - nyelv és cím alapján, mert az index fájlonként csúszhat.
+        self.track_label.configure(
+            text="Forrás sáv minden fájlhoz:" if self.mode == "folder" else "Forrás felirat sáv:")
         self._set_source("")
 
     def _on_engine_change(self, label: str) -> None:
@@ -401,8 +400,35 @@ class App(ctk.CTk):
             return
         self.queue_paths = paths
         self._ui(self._render_queue)
+        if not paths:
+            self._ui(self.stage_label.configure, text="Nem találtam MKV fájlt ebben a mappában.")
+            return
+        self._ui(self.stage_label.configure, text=f"{len(paths)} MKV fájl a sorban.")
+
+        # A sávlistát a mappa első fájljából olvassuk ki - egy évadon belül
+        # a sávok elrendezése jellemzően minden epizódban azonos.
         self._ui(self.stage_label.configure,
-                 text=f"{len(paths)} MKV fájl a sorban." if paths else "Nem találtam MKV fájlt ebben a mappában.")
+                 text=f"{len(paths)} MKV fájl · sávok beolvasása az első fájlból…")
+        try:
+            info = self.ffmpeg.probe(paths[0])
+        except MediaError as exc:
+            log.warning("Az első fájl sávjai nem olvashatók: %s", exc)
+            self._ui(self.stage_label.configure, text=f"{len(paths)} MKV fájl a sorban.")
+            return
+
+        self.media_info = info
+        self.tracks = info.subtitle_tracks
+        best = pick_best_track(self.tracks)
+        values = ["Automatikus – fájlonként a legjobb sáv"] + [t.label for t in self.tracks]
+
+        def apply() -> None:
+            self.track_menu.configure(values=values)
+            self.track_menu.set(values[0])
+            extra = f" · ajánlott: {best.label}" if best else ""
+            self.stage_label.configure(
+                text=f"{len(paths)} MKV fájl · {len(self.tracks)} felirat sáv az első fájlban{extra}")
+
+        self._ui(apply)
 
     def _analyze(self) -> None:
         self._ui(self.stage_label.configure, text="Felirat sávok elemzése…")
@@ -488,8 +514,10 @@ class App(ctk.CTk):
                                    "Előbb válassz ki egy fájlt vagy egy mappát!")
             return
 
+        # A kiválasztott sáv mindkét módban él. Egy fájlnál pontosan ezt a sávot
+        # használjuk, mappánál mintaként: minden fájlban ezt keressük meg.
         chosen_track = None
-        if self.mode == "file" and self.tracks:
+        if self.tracks:
             selected = self.track_menu.get()
             chosen_track = next((t for t in self.tracks if t.label == selected), None)
             if chosen_track and chosen_track.is_bitmap:
@@ -539,7 +567,8 @@ class App(ctk.CTk):
                 results = [result]
             else:
                 results = self.pipeline.process_many(
-                    self.queue_paths, callbacks, self.cancel_event)
+                    self.queue_paths, callbacks, self.cancel_event,
+                    preference=chosen_track)
         except Exception as exc:
             log.exception("Váratlan hiba a feldolgozás közben")
             self._ui(messagebox.showerror, "Váratlan hiba", str(exc))

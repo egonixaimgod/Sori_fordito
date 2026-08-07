@@ -383,6 +383,42 @@ def score_track(track: SubtitleTrack) -> int:
     return score
 
 
+def find_matching_track(tracks: list[SubtitleTrack],
+                        preference: SubtitleTrack) -> SubtitleTrack | None:
+    """Ugyanannak a sávnak a megkeresése egy másik fájlban.
+
+    Kötegelt módban a sáv INDEXE fájlonként eltérhet, a nyelve és a címe
+    viszont egy évadon belül általában ugyanaz. Ezért cím és nyelv alapján
+    keresünk, egyre lazább feltételekkel.
+    """
+    usable = [t for t in tracks if not t.is_bitmap]
+    if not usable:
+        return None
+
+    language = preference.language.lower()
+    title = preference.title.lower().strip()
+
+    # 1. nyelv + cím + kodek - ez a biztos találat
+    for track in usable:
+        if (track.language.lower() == language
+                and track.title.lower().strip() == title
+                and track.codec == preference.codec):
+            return track
+    # 2. nyelv + cím
+    for track in usable:
+        if track.language.lower() == language and track.title.lower().strip() == title:
+            return track
+    # 3. nyelv + kodek
+    for track in usable:
+        if track.language.lower() == language and track.codec == preference.codec:
+            return track
+    # 4. csak nyelv, a legteljesebb ilyen sávval
+    same_language = [t for t in usable if t.language.lower() == language]
+    if same_language:
+        return max(same_language, key=score_track)
+    return None
+
+
 def pick_best_track(tracks: list[SubtitleTrack]) -> SubtitleTrack | None:
     """Automatikus sávválasztás fordításhoz."""
     candidates = [t for t in tracks if not t.is_bitmap and not t.is_hungarian]

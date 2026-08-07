@@ -17,7 +17,8 @@ from typing import Callable, Optional
 
 from .config import TRACK_TITLE
 from .logsetup import get_logger
-from .media import FFmpeg, MediaError, MediaInfo, SubtitleTrack, pick_best_track
+from .media import (FFmpeg, MediaError, MediaInfo, SubtitleTrack,
+                    find_matching_track, pick_best_track)
 from .subtitles import load_document
 from .translator import TranslationStats, Translator
 from .util import Stopwatch, human_time, human_size
@@ -107,12 +108,17 @@ class Pipeline:
         paths: list[str],
         callbacks: Callbacks,
         cancel: Optional[threading.Event] = None,
+        preference: Optional[SubtitleTrack] = None,
     ) -> list[JobResult]:
         results: list[JobResult] = []
         total = len(paths)
         watch = Stopwatch()
         log.info("=" * 70)
         log.info("KÖTEGELT FELDOLGOZÁS INDUL: %d fájl", total)
+        if preference:
+            log.info("Kért forrássáv minden fájlban: %s", preference.label)
+        else:
+            log.info("Forrássáv: fájlonként automatikusan a legjobb")
         log.info("=" * 70)
 
         for index, path in enumerate(paths, start=1):
@@ -121,7 +127,8 @@ class Pipeline:
                 results.append(JobResult(path, JobStatus.CANCELLED, "Megszakítva"))
                 break
             callbacks.on_file_start(index, total, path)
-            result = self.process_file(path, callbacks=callbacks, cancel=cancel)
+            result = self.process_file(path, callbacks=callbacks, cancel=cancel,
+                                       preference=preference)
             results.append(result)
             callbacks.on_file_done(result)
 
@@ -146,6 +153,7 @@ class Pipeline:
         callbacks: Optional[Callbacks] = None,
         cancel: Optional[threading.Event] = None,
         allow_skip: bool = True,
+        preference: Optional[SubtitleTrack] = None,
     ) -> JobResult:
         callbacks = callbacks or Callbacks()
         result = JobResult(path=path)
@@ -190,7 +198,17 @@ class Pipeline:
                 log.info("Van már benne magyar sáv, de egy fájlt választottál - "
                          "újrafordítjuk, a régi magyar sáv lecserélődik.")
 
-            chosen = track or pick_best_track(info.subtitle_tracks)
+            # Sávválasztás: kézzel megadott > kötegelt minta > automatikus.
+            chosen = track
+            if chosen is None and preference is not None:
+                chosen = find_matching_track(info.subtitle_tracks, preference)
+                if chosen:
+                    log.info("A kért sáv megvan ebben a fájlban is: %s", chosen.label)
+                else:
+                    log.warning("A kért sáv (%s) nincs meg ebben a fájlban - "
+                                "automatikus választás lép életbe.", preference.label)
+            if chosen is None:
+                chosen = pick_best_track(info.subtitle_tracks)
             if not chosen:
                 result.status = JobStatus.SKIPPED
                 bitmap = all(t.is_bitmap for t in info.subtitle_tracks)
