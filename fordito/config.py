@@ -35,7 +35,7 @@ DEFAULT_PROTECTED_TERMS = [
 # A beállításfájl változata. Ha nő, a load() egyszeri átállítást végez azokon
 # a kapcsolókon, amiknek megváltozott az alapértéke - különben a régi mentés
 # csendben felülírná az újat, és a felhasználó a régi viselkedést kapná.
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 
 @dataclass
@@ -61,9 +61,17 @@ class Settings:
     set_as_default: bool = True          # a magyar sáv legyen az alapértelmezett
     replace_original: bool = True        # az eredeti MKV felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
-    # Alapból NEM tartjuk meg a külön .srt-t, ha a felirat bekerült az MKV-be:
-    # a lejátszók a külső fájlt választanák, és két magyar felirat látszana.
-    keep_srt_file: bool = False
+    # A külön .srt fájl megtartása a videó mellett. ALAPBÓL BE.
+    #
+    # Miért? Mert a beágyazott sávot nem minden lejátszó teszi ki. Mérésekkel
+    # igazolt eset: az MKV-ba muxolt magyar sáv tökéletes (kiolvasható és
+    # renderelhető), a lejátszó mégsem jelenítette meg - ugyanazt a szöveget
+    # külső .srt fájlból viszont hibátlanul kiírta.
+    #
+    # A külső fájl tehát a biztos út. A beágyazott sáv emellett is megmarad
+    # (TV-n, telefonon, Plexen az a hasznos), csak a lejátszó listájában
+    # megjelenik két magyar bejegyzés. Ez a kisebbik rossz.
+    keep_srt_file: bool = True
     # Megjegyzés: a program szándékosan NEM dönt helyetted arról, melyik fájlt
     # kell lefordítani. Minden fájl kipipálva indul a munkalistán, a többi
     # a te dolgod - így soha nem marad ki valami magától.
@@ -109,13 +117,12 @@ class Settings:
         """Régi beállításfájl igazítása az új alapértékekhez."""
         if from_version >= CONFIG_VERSION:
             return
-        if from_version < 2:
-            # A külön .srt megtartása mostantól alapból ki: a lejátszók a külső
-            # fájlt választanák a beágyazott sáv helyett, és két magyar felirat
-            # jelenne meg. Aki külön fájlt akar, visszakapcsolhatja.
-            self.keep_srt_file = False
-            log.info("Beállítás frissítve: a külön .srt fájlt már nem tartjuk meg "
-                     "(a beágyazott sáv az alapértelmezett).")
+        if from_version < 3:
+            # A külön .srt fájlt mégis megtartjuk: van olyan lejátszó, amelyik
+            # a beágyazott sávot nem teszi ki, a külső fájlt viszont igen.
+            self.keep_srt_file = True
+            log.info("Beállítás frissítve: a külön .srt fájl mostantól megmarad "
+                     "a videó mellett (biztosan megjelenő felirat).")
         self.config_version = CONFIG_VERSION
         self.save()
 
