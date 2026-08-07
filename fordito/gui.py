@@ -19,7 +19,7 @@ from . import logsetup
 from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
-from .pipeline import Callbacks, JobResult, JobStatus, Pipeline
+from .pipeline import SUBTITLE_SUFFIX, Callbacks, JobResult, JobStatus, Pipeline
 from .subtitles import load_document
 from .translator import Translator, suggest_protected_terms
 from .util import human_time, shorten_path
@@ -447,6 +447,51 @@ class App(ctk.CTk):
                 text=f"{len(paths)} MKV fájl · {len(self.tracks)} felirat sáv az első fájlban{extra}")
 
         self._ui(apply)
+        self._mark_finished_files(paths)
+
+    def _mark_finished_files(self, paths: list[str]) -> None:
+        """Megjelöli a listában a MÁR KÉSZ fájlokat.
+
+        Kész = van benne magyar sáv ÉS ott a _magyar_felirat.srt is mellette.
+        Ha csak a sáv van meg, az nem elég: az a felirat lehet régi vagy hibás,
+        ezért olyankor marad a pipa, és a fájl újra lefordul.
+
+        A program SOHA nem hagy ki fájlt magától - ez csak a pipát állítja,
+        amit egy kattintással vissza lehet tenni.
+        """
+        auto_uncheck = bool(getattr(self.settings, "auto_uncheck_done", True))
+        if not auto_uncheck:
+            return
+
+        done: list[str] = []
+        for path in paths:
+            base = os.path.splitext(path)[0]
+            sidecar = any(os.path.exists(base + SUBTITLE_SUFFIX + ext)
+                          for ext in (".srt", ".ass", ".ssa"))
+            if not sidecar:
+                continue
+            try:
+                info = self.ffmpeg.probe(path)
+            except MediaError:
+                continue
+            if info.has_hungarian:
+                done.append(path)
+
+        if not done:
+            log.info("A mappában nincs olyan fájl, ami már teljesen kész volna.")
+            return
+        log.info("%d fájl már kész (magyar sáv + felirat fájl) - ezekről levettem a pipát.",
+                 len(done))
+
+        def apply() -> None:
+            for path in done:
+                if path not in self.row_widgets:
+                    continue
+                self.row_widgets[path]["var"].set(False)
+                self._set_row(path, "már kész – vedd vissza a pipát, ha újra kell", COL_OK)
+            self._update_selection_label()
+
+        self._ui(apply)
 
     def _analyze(self) -> None:
         self._ui(self.stage_label.configure, text="Felirat sávok elemzése…")
@@ -636,7 +681,7 @@ class App(ctk.CTk):
                     self.active_paths[0],
                     track=chosen_track if self.mode == "file" else None,
                     preference=chosen_track if self.mode == "folder" else None,
-                    callbacks=callbacks, cancel=self.cancel_event, allow_skip=False)
+                    callbacks=callbacks, cancel=self.cancel_event)
                 callbacks.on_file_done(result)
                 results = [result]
             else:
@@ -887,8 +932,11 @@ class SettingsWindow(ctk.CTkToplevel):
                      "Felülírás előtt az eredeti fájl átnevezve megmarad. Sok helyet foglal.")
         self._switch(tab, "A külön _magyar_felirat.srt fájl is maradjon meg", "keep_srt_file",
                      "Így az MKV mellett önálló feliratfájlként is megvan a fordítás.")
-        self._switch(tab, "Kihagyás, ha már van benne magyar felirat", "skip_if_hungarian_exists",
-                     "Kötegelt módban a már kész epizódokat átugorja - így bármikor újraindítható.")
+        self._switch(tab, "Kész fájlokról vegye le a pipát a listában", "auto_uncheck_done",
+                     "Mappa beolvasásakor kiveszi a pipát azokból a fájlokból, amik MÁR TELJESEN "
+                     "készek: van bennük magyar sáv ÉS ott a _magyar_felirat.srt is mellettük. "
+                     "A program soha nem hagy ki fájlt magától – amit kipipálva hagysz, az mindig "
+                     "lefordul, akkor is, ha már van benne magyar felirat.")
         self._switch(tab, "Almappák bejárása is", "recursive_scan",
                      "Mappás módban az összes almappában megkeresi az MKV fájlokat.")
 
@@ -1026,7 +1074,7 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _save(self) -> None:
         for attribute in ("mux_into_mkv", "set_as_default", "replace_original", "keep_backup",
-                          "keep_srt_file", "skip_if_hungarian_exists", "recursive_scan",
+                          "keep_srt_file", "auto_uncheck_done", "recursive_scan",
                           "merge_sentences", "use_cache"):
             variable = getattr(self, f"var_{attribute}", None)
             if variable is not None:

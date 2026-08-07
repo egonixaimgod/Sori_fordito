@@ -127,6 +127,9 @@ class Pipeline:
                 results.append(JobResult(path, JobStatus.CANCELLED, "Megszakítva"))
                 break
             callbacks.on_file_start(index, total, path)
+            # Soha nem hagyunk ki semmit: ami idáig eljut, azt a felhasználó
+            # kipipálta a munkalistán. A már kész fájlok kiszűrése a listánál
+            # történik, nem itt - így mindig látszik, mi miért marad ki.
             result = self.process_file(path, callbacks=callbacks, cancel=cancel,
                                        preference=preference)
             results.append(result)
@@ -152,7 +155,6 @@ class Pipeline:
         track: Optional[SubtitleTrack] = None,
         callbacks: Optional[Callbacks] = None,
         cancel: Optional[threading.Event] = None,
-        allow_skip: bool = True,
         preference: Optional[SubtitleTrack] = None,
     ) -> JobResult:
         callbacks = callbacks or Callbacks()
@@ -183,19 +185,11 @@ class Pipeline:
                 log.warning("%s: %s", result.name, result.message)
                 return result
 
-            # A kihagyás csak kötegelt módban való: ott a félbehagyott mappa
-            # folytathatósága a cél. Ha valaki egyetlen fájlt választ ki kézzel,
-            # azt akarja, hogy le is fusson - akár újra.
-            if (allow_skip
-                    and getattr(self.settings, "skip_if_hungarian_exists", True)
-                    and info.has_hungarian
-                    and getattr(self.settings, "mux_into_mkv", True)):
-                result.status = JobStatus.SKIPPED
-                result.message = "Már van benne magyar felirat."
-                log.info("%s: %s - kihagyva.", result.name, result.message)
-                return result
-            if not allow_skip and info.has_hungarian:
-                log.info("Van már benne magyar sáv, de egy fájlt választottál - "
+            # Itt SOHA nem hagyunk ki fájlt. Ami idáig eljut, azt a felhasználó
+            # kipipálta a munkalistán - a döntés az övé, nem a programé.
+            # A már kész fájlok jelölése a listában történik, láthatóan.
+            if info.has_hungarian:
+                log.info("Van már benne magyar sáv, de ki van pipálva - "
                          "újrafordítjuk, a régi magyar sáv lecserélődik.")
 
             # Sávválasztás: kézzel megadott > kötegelt minta > automatikus.

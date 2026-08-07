@@ -54,7 +54,11 @@ class Settings:
     replace_original: bool = True        # az eredeti MKV felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
     keep_srt_file: bool = True           # a _magyar_felirat.srt megtartása az MKV mellett
-    skip_if_hungarian_exists: bool = True  # kötegelt módban a kész fájlok kihagyása
+    # A mappa beolvasásakor vegye-e ki a pipát a MÁR KÉSZ fájlokból.
+    # Kész = van benne magyar sáv ÉS ott a _magyar_felirat.srt is mellette.
+    # A program soha nem hagy ki magától fájlt: ez csak a pipát állítja,
+    # amit egy kattintással vissza lehet tenni.
+    auto_uncheck_done: bool = True
 
     # --- Egyéb ---
     recursive_scan: bool = True          # almappák bejárása kötegelt módban
