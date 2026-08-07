@@ -1,0 +1,9 @@
+# Magyar Felirat Fordító - függőségek
+#
+# Szándékosan minimális: a fordítás, a hálózat és a feliratkezelés mind
+# a Python beépített moduljaival megy. Csak a felülethez kell külső csomag.
+
+customtkinter>=5.2.0
+
+# Csomagoláshoz (nem kötelező a futtatáshoz):
+# pyinstaller>=6.0

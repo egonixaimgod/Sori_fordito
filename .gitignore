@@ -1,4 +1,21 @@
-build/  
-dist/  
-*.exe  
-*.spec 
+# Fordítási és futási melléktermékek
+build/
+dist/
+*.exe
+__pycache__/
+*.pyc
+
+# A program által generált fájlok (soha ne kerüljenek a repóba)
+fordito_debug.log
+fordito_debug.log.*
+fordito_cache.sqlite
+fordito_cache.sqlite-*
+fordito_beallitasok.json
+aifordito_config.json
+
+# Feliratok és videók
+*.mkv
+*.srt
+*.ass
+*.ssa
+*.bak
