@@ -214,3 +214,4 @@ kérés, minden újrapróbálkozás és minden hiba a teljes veremmel.
 > A fordítószolgáltatások a böngészőjükkel megegyező módon érhetők el. Ha valamelyik
 > megváltoztatja a felületét, az adott motor kieshet – ilyenkor a program automatikusan
 > a másikra vált, és ezt a naplóba is beírja.
+"# Sori_fordito" 
