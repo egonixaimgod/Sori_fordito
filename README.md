@@ -186,7 +186,12 @@ fordito/
     base.py                közös motorfelület
     bing.py                Microsoft fordító (elsődleges)
     google.py              Google Translate (tartalék)
-legacy/                    a régi verzió, referenciának
+```
+
+A régi verzió (streamlit app + az eredeti `main.py`) már nincs a mappában, de a git
+history-ban megmaradt – ha kellene: `git show df673be:legacy/main_regi.py`
+
+```
 ```
 
 A program által generált fájlok (mind a program mellett):

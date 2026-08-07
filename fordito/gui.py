@@ -81,8 +81,9 @@ class App(ctk.CTk):
         self.source_path = ""
         self.media_info = None
         self.tracks = []
-        self.queue_paths: list[str] = []
-        self.row_widgets: dict[str, tuple] = {}
+        self.queue_paths: list[str] = []          # minden megtalált fájl
+        self.active_paths: list[str] = []         # ebből a kipipáltak
+        self.row_widgets: dict[str, dict] = {}
         self.worker: threading.Thread | None = None
         self.cancel_event = threading.Event()
         self.started_at = 0.0
@@ -220,12 +221,26 @@ class App(ctk.CTk):
         queue_card.grid(row=1, column=0, sticky="nsew", pady=(0, 12))
         queue_card.grid_rowconfigure(1, weight=1)
 
+        self.selection_label = ctk.CTkLabel(queue_card, text="", font=FONT_SMALL,
+                                            text_color=COL_MUTED, anchor="e")
+        self.selection_label.grid(row=0, column=3, padx=(0, 8), pady=(10, 4), sticky="e")
+        self.select_all_btn = ctk.CTkButton(queue_card, text="Mind", width=62, height=24,
+                                            font=FONT_SMALL, fg_color=COL_CARD_2,
+                                            hover_color=COL_ACCENT,
+                                            command=lambda: self._select_all(True))
+        self.select_all_btn.grid(row=0, column=4, padx=(0, 6), pady=(10, 4), sticky="e")
+        self.select_none_btn = ctk.CTkButton(queue_card, text="Egyik sem", width=82, height=24,
+                                             font=FONT_SMALL, fg_color=COL_CARD_2,
+                                             hover_color=COL_ACCENT,
+                                             command=lambda: self._select_all(False))
+        self.select_none_btn.grid(row=0, column=5, padx=(0, 14), pady=(10, 4), sticky="e")
+
         self.queue_frame = ctk.CTkScrollableFrame(queue_card, fg_color=COL_CARD_2, corner_radius=8)
         self.queue_frame.grid(row=1, column=0, columnspan=6, padx=14, pady=(0, 14), sticky="nsew")
-        self.queue_frame.grid_columnconfigure(0, weight=1)
+        self.queue_frame.grid_columnconfigure(1, weight=1)
         self.queue_empty = ctk.CTkLabel(self.queue_frame, text="Még nincs kiválasztva semmi.",
                                         font=FONT_BODY, text_color=COL_MUTED)
-        self.queue_empty.grid(row=0, column=0, padx=12, pady=12, sticky="w")
+        self.queue_empty.grid(row=0, column=0, columnspan=3, padx=12, pady=12, sticky="w")
 
         # --- 3. Haladás -----------------------------------------------
         progress = _card(main, "3 ·  HALADÁS")
@@ -460,25 +475,27 @@ class App(ctk.CTk):
     # ==================================================================
     #  Munkalista
     # ==================================================================
-    def _clear_queue(self) -> None:
+    def _destroy_rows(self) -> None:
         for widgets in self.row_widgets.values():
-            for widget in widgets:
+            for widget in (widgets["check"], widgets["name"], widgets["status"]):
                 widget.destroy()
         self.row_widgets.clear()
+
+    def _clear_queue(self) -> None:
+        self._destroy_rows()
         self.queue_paths = []
         self.queue_empty.grid()
+        self.selection_label.configure(text="")
         self.overall_bar.set(0)
         self.overall_label.configure(text="Összesen: –")
         self.eta_label.configure(text="")
 
     def _render_queue(self) -> None:
-        for widgets in self.row_widgets.values():
-            for widget in widgets:
-                widget.destroy()
-        self.row_widgets.clear()
+        self._destroy_rows()
 
         if not self.queue_paths:
             self.queue_empty.grid()
+            self.selection_label.configure(text="")
             return
         self.queue_empty.grid_remove()
 
@@ -488,20 +505,53 @@ class App(ctk.CTk):
                 display = os.path.relpath(path, base)
             except ValueError:
                 display = os.path.basename(path)
-            name = ctk.CTkLabel(self.queue_frame, text=f"  {row + 1}.  {display}", font=FONT_BODY,
-                                text_color=COL_TEXT, anchor="w")
-            name.grid(row=row, column=0, padx=(6, 10), pady=2, sticky="ew")
-            state = ctk.CTkLabel(self.queue_frame, text="várakozik", font=FONT_SMALL,
-                                 text_color=COL_MUTED, anchor="e", width=210)
-            state.grid(row=row, column=1, padx=(0, 10), pady=2, sticky="e")
-            self.row_widgets[path] = (name, state)
 
-        self.overall_label.configure(text=f"Összesen: 0 / {len(self.queue_paths)} fájl")
+            # Pipa: alapból minden be van jelölve, egy kattintással kivehető.
+            variable = tk.BooleanVar(value=True)
+            check = ctk.CTkCheckBox(self.queue_frame, text="", variable=variable, width=24,
+                                    checkbox_width=18, checkbox_height=18,
+                                    fg_color=COL_ACCENT, hover_color=COL_ACCENT_HOVER,
+                                    command=self._update_selection_label)
+            check.grid(row=row, column=0, padx=(8, 4), pady=2)
+
+            name = ctk.CTkLabel(self.queue_frame, text=f"{row + 1}.  {display}", font=FONT_BODY,
+                                text_color=COL_TEXT, anchor="w")
+            name.grid(row=row, column=1, padx=(2, 10), pady=2, sticky="ew")
+
+            status = ctk.CTkLabel(self.queue_frame, text="várakozik", font=FONT_SMALL,
+                                  text_color=COL_MUTED, anchor="e", width=210)
+            status.grid(row=row, column=2, padx=(0, 10), pady=2, sticky="e")
+
+            self.row_widgets[path] = {"check": check, "var": variable,
+                                      "name": name, "status": status}
+
+        self._update_selection_label()
+        self.overall_label.configure(text=f"Összesen: 0 / {len(self.selected_paths())} fájl")
+
+    def selected_paths(self) -> list[str]:
+        """A munkalistából kipipált fájlok, az eredeti sorrendben."""
+        return [p for p in self.queue_paths
+                if self.row_widgets.get(p, {}).get("var", None) is None
+                or self.row_widgets[p]["var"].get()]
+
+    def _select_all(self, value: bool) -> None:
+        for widgets in self.row_widgets.values():
+            widgets["var"].set(value)
+        self._update_selection_label()
+
+    def _update_selection_label(self) -> None:
+        total = len(self.queue_paths)
+        chosen = len(self.selected_paths())
+        if not total:
+            self.selection_label.configure(text="")
+            return
+        color = COL_MUTED if chosen else COL_WARN
+        self.selection_label.configure(text=f"{chosen} / {total} kiválasztva", text_color=color)
 
     def _set_row(self, path: str, text: str, color: str) -> None:
         widgets = self.row_widgets.get(path)
         if widgets:
-            widgets[1].configure(text=text, text_color=color)
+            widgets["status"].configure(text=text, text_color=color)
 
     # ==================================================================
     #  Futtatás
@@ -512,6 +562,15 @@ class App(ctk.CTk):
         if not self.queue_paths:
             messagebox.showwarning("Nincs mit fordítani",
                                    "Előbb válassz ki egy fájlt vagy egy mappát!")
+            return
+
+        # Csak a kipipált fájlokkal dolgozunk.
+        self.active_paths = self.selected_paths()
+        if not self.active_paths:
+            messagebox.showwarning(
+                "Nincs kipipálva semmi",
+                "A munkalistában egyetlen fájl sincs kijelölve.\n"
+                "Pipáld ki, amit le akarsz fordítani, vagy nyomd meg a „Mind” gombot.")
             return
 
         # A kiválasztott sáv mindkét módban él. Egy fájlnál pontosan ezt a sávot
@@ -534,12 +593,21 @@ class App(ctk.CTk):
         self.stop_btn.configure(state="normal")
         self.browse_btn.configure(state="disabled")
         self.mode_switch.configure(state="disabled")
-        for path in self.queue_paths:
-            self._set_row(path, "várakozik", COL_MUTED)
+        self.select_all_btn.configure(state="disabled")
+        self.select_none_btn.configure(state="disabled")
+
+        # Futás közben a pipák zárolva: a lista nem változhat a hátunk mögött.
+        for path, widgets in self.row_widgets.items():
+            widgets["check"].configure(state="disabled")
+            if path in self.active_paths:
+                self._set_row(path, "várakozik", COL_MUTED)
+            else:
+                self._set_row(path, "nincs kipipálva", COL_MUTED)
+                widgets["name"].configure(text_color=COL_MUTED)
 
         log.info("#" * 70)
-        log.info("INDÍTÁS – %d fájl, mód: %s, motor: %s",
-                 len(self.queue_paths), self.mode, self.settings.engine)
+        log.info("INDÍTÁS – %d fájl a kipipált %d közül, mód: %s, motor: %s",
+                 len(self.active_paths), len(self.queue_paths), self.mode, self.settings.engine)
         log.info("Beillesztés MKV-be: %s | alapértelmezett sáv: %s | eredeti felülírása: %s",
                  self.settings.mux_into_mkv, self.settings.set_as_default, self.settings.replace_original)
         log.info("#" * 70)
@@ -556,18 +624,21 @@ class App(ctk.CTk):
             on_file_done=self._on_file_done,
         )
         try:
-            if len(self.queue_paths) == 1:
-                callbacks.on_file_start(1, 1, self.queue_paths[0])
+            if len(self.active_paths) == 1:
+                callbacks.on_file_start(1, 1, self.active_paths[0])
                 # Egyetlen, kézzel kiválasztott fájlnál sosem hagyunk ki semmit:
                 # ha a felhasználó ezt a fájlt jelölte ki, azt akarja, hogy lefusson.
+                # Mappás módban a sáv mintaként megy, egy fájlnál pontos találatként.
                 result = self.pipeline.process_file(
-                    self.queue_paths[0], track=chosen_track,
+                    self.active_paths[0],
+                    track=chosen_track if self.mode == "file" else None,
+                    preference=chosen_track if self.mode == "folder" else None,
                     callbacks=callbacks, cancel=self.cancel_event, allow_skip=False)
                 callbacks.on_file_done(result)
                 results = [result]
             else:
                 results = self.pipeline.process_many(
-                    self.queue_paths, callbacks, self.cancel_event,
+                    self.active_paths, callbacks, self.cancel_event,
                     preference=chosen_track)
         except Exception as exc:
             log.exception("Váratlan hiba a feldolgozás közben")
@@ -583,7 +654,7 @@ class App(ctk.CTk):
             self.overall_label.configure(text=f"Összesen: {index - 1} / {total} fájl kész")
             widgets = self.row_widgets.get(path)
             if widgets:
-                widgets[0].configure(text_color=COL_ACCENT)
+                widgets["name"].configure(text_color=COL_ACCENT)
         self._ui(apply)
 
     def _on_file_done(self, result: JobResult) -> None:
@@ -602,9 +673,9 @@ class App(ctk.CTk):
             self._set_row(result.path, text, color)
             widgets = self.row_widgets.get(result.path)
             if widgets:
-                widgets[0].configure(text_color=COL_TEXT)
+                widgets["name"].configure(text_color=COL_TEXT)
 
-            total = len(self.queue_paths)
+            total = len(self.active_paths)
             self.overall_bar.set(self.completed_files / total if total else 0)
             self.overall_label.configure(text=f"Összesen: {self.completed_files} / {total} fájl kész")
 
@@ -623,6 +694,10 @@ class App(ctk.CTk):
         self.stop_btn.configure(state="disabled")
         self.browse_btn.configure(state="normal")
         self.mode_switch.configure(state="normal")
+        self.select_all_btn.configure(state="normal")
+        self.select_none_btn.configure(state="normal")
+        for widgets in self.row_widgets.values():
+            widgets["check"].configure(state="normal")
         self.file_bar.set(0)
 
         ok = [r for r in results if r.status is JobStatus.OK]
