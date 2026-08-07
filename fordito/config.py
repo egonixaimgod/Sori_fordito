@@ -32,8 +32,15 @@ DEFAULT_PROTECTED_TERMS = [
 ]
 
 
+# A beállításfájl változata. Ha nő, a load() egyszeri átállítást végez azokon
+# a kapcsolókon, amiknek megváltozott az alapértéke - különben a régi mentés
+# csendben felülírná az újat, és a felhasználó a régi viselkedést kapná.
+CONFIG_VERSION = 2
+
+
 @dataclass
 class Settings:
+    config_version: int = CONFIG_VERSION
     # --- Fordítómotor (mind netes, egyik sem kér kulcsot vagy fiókot) ---
     engine: str = "auto"                 # auto | bing | google
     bing_workers: int = 8                # párhuzamos Microsoft kérések
@@ -57,11 +64,9 @@ class Settings:
     # Alapból NEM tartjuk meg a külön .srt-t, ha a felirat bekerült az MKV-be:
     # a lejátszók a külső fájlt választanák, és két magyar felirat látszana.
     keep_srt_file: bool = False
-    # A mappa beolvasásakor vegye-e ki a pipát a MÁR KÉSZ fájlokból.
-    # Kész = van benne magyar sáv ÉS ott a _magyar_felirat.srt is mellette.
-    # A program soha nem hagy ki magától fájlt: ez csak a pipát állítja,
-    # amit egy kattintással vissza lehet tenni.
-    auto_uncheck_done: bool = False
+    # Megjegyzés: a program szándékosan NEM dönt helyetted arról, melyik fájlt
+    # kell lefordítani. Minden fájl kipipálva indul a munkalistán, a többi
+    # a te dolgod - így soha nem marad ki valami magától.
 
     # --- Egyéb ---
     recursive_scan: bool = True          # almappák bejárása kötegelt módban
@@ -95,9 +100,24 @@ class Settings:
                 else:
                     log.debug("Ismeretlen beállítás a fájlban, kihagyva: %s", key)
             log.info("Beállítások betöltve: %s", path)
+            settings._migrate(int(data.get("config_version", 1)))
         except Exception as exc:
             log.warning("A beállításfájl nem olvasható (%s), alapértelmezések lépnek életbe.", exc)
         return settings
+
+    def _migrate(self, from_version: int) -> None:
+        """Régi beállításfájl igazítása az új alapértékekhez."""
+        if from_version >= CONFIG_VERSION:
+            return
+        if from_version < 2:
+            # A külön .srt megtartása mostantól alapból ki: a lejátszók a külső
+            # fájlt választanák a beágyazott sáv helyett, és két magyar felirat
+            # jelenne meg. Aki külön fájlt akar, visszakapcsolhatja.
+            self.keep_srt_file = False
+            log.info("Beállítás frissítve: a külön .srt fájlt már nem tartjuk meg "
+                     "(a beágyazott sáv az alapértelmezett).")
+        self.config_version = CONFIG_VERSION
+        self.save()
 
     def save(self) -> None:
         path = self.path()
