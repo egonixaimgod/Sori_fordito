@@ -19,7 +19,7 @@ from . import logsetup
 from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
-from .pipeline import SUBTITLE_SUFFIX, Callbacks, JobResult, JobStatus, Pipeline
+from .pipeline import Callbacks, JobResult, JobStatus, Pipeline
 from .subtitles import load_document
 from .translator import Translator, suggest_protected_terms
 from .util import human_time, shorten_path
@@ -135,7 +135,7 @@ class App(ctk.CTk):
         bar = ctk.CTkFrame(self, fg_color=COL_CARD, corner_radius=0, width=250)
         bar.grid(row=1, column=0, sticky="nsw")
         bar.grid_propagate(False)
-        bar.grid_rowconfigure(8, weight=1)
+        bar.grid_rowconfigure(10, weight=1)   # rugalmas köz a lábléc előtt
 
         def section(text: str, row: int, pady=(16, 4)) -> None:
             ctk.CTkLabel(bar, text=text, font=FONT_CARD, text_color=COL_MUTED, anchor="w").grid(
@@ -179,8 +179,19 @@ class App(ctk.CTk):
         )
         self.stop_btn.grid(row=7, column=0, padx=18, pady=(0, 8), sticky="ew")
 
+        # Friss fordítás: mindent nulláról, a korábbi eredmények mellőzésével.
+        self.fresh_var = tk.BooleanVar(value=bool(self.settings.fresh_translation))
+        self.fresh_switch = ctk.CTkSwitch(
+            bar, text="Friss fordítás (nulláról)", variable=self.fresh_var,
+            font=FONT_SMALL, progress_color=COL_ACCENT, command=self._on_fresh_change,
+        )
+        self.fresh_switch.grid(row=8, column=0, padx=20, pady=(2, 6), sticky="w")
+        ctk.CTkLabel(bar, text="A korábban lefordított sorokat sem\nhasználja fel újra.",
+                     font=FONT_SMALL, text_color=COL_MUTED, justify="left", anchor="w"
+                     ).grid(row=9, column=0, padx=20, pady=(0, 6), sticky="ew")
+
         footer = ctk.CTkFrame(bar, fg_color="transparent")
-        footer.grid(row=9, column=0, padx=18, pady=(0, 16), sticky="ew")
+        footer.grid(row=11, column=0, padx=18, pady=(0, 16), sticky="ew")
         footer.grid_columnconfigure(0, weight=1)
         ctk.CTkButton(footer, text="⚙  Beállítások", font=FONT_BODY, height=32,
                       fg_color=COL_CARD_2, hover_color=COL_ACCENT,
@@ -360,6 +371,12 @@ class App(ctk.CTk):
         self.engine_status.configure(text="Ellenőrzés…", text_color=COL_MUTED)
         self._refresh_engine_status()
 
+    def _on_fresh_change(self) -> None:
+        self.settings.fresh_translation = bool(self.fresh_var.get())
+        self.settings.save()
+        log.info("Friss fordítás: %s", "BE - minden sor újra lefordul"
+                 if self.settings.fresh_translation else "ki - a gyorsítótár is használva lesz")
+
     def _on_level_change(self, label: str) -> None:
         logsetup.set_gui_level(LOG_LEVELS[label])
         self.settings.gui_log_level = label if label in LOG_LEVELS else "Normál"
@@ -465,11 +482,6 @@ class App(ctk.CTk):
 
         done: list[str] = []
         for path in paths:
-            base = os.path.splitext(path)[0]
-            sidecar = any(os.path.exists(base + SUBTITLE_SUFFIX + ext)
-                          for ext in (".srt", ".ass", ".ssa"))
-            if not sidecar:
-                continue
             try:
                 info = self.ffmpeg.probe(path)
             except MediaError:
@@ -931,7 +943,10 @@ class SettingsWindow(ctk.CTkToplevel):
         self._switch(tab, "Biztonsági másolat az eredetiről (.bak)", "keep_backup",
                      "Felülírás előtt az eredeti fájl átnevezve megmarad. Sok helyet foglal.")
         self._switch(tab, "A külön _magyar_felirat.srt fájl is maradjon meg", "keep_srt_file",
-                     "Így az MKV mellett önálló feliratfájlként is megvan a fordítás.")
+                     "Alapból KI. A lejátszók (MPC, VLC) a külső feliratfájlt választják a "
+                     "beágyazott sáv helyett, így két magyar felirat jelenne meg a listában, és "
+                     "nem az kerülne elő, amit alapértelmezettnek jelöltünk. Kapcsold be, ha "
+                     "külön fájlként is kell a felirat – de akkor számíts a dupla bejegyzésre.")
         self._switch(tab, "Kész fájlokról vegye le a pipát a listában", "auto_uncheck_done",
                      "Mappa beolvasásakor kiveszi a pipát azokból a fájlokból, amik MÁR TELJESEN "
                      "készek: van bennük magyar sáv ÉS ott a _magyar_felirat.srt is mellettük. "

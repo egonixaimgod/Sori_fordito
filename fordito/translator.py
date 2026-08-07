@@ -482,10 +482,15 @@ class Translator:
         stats.engine_name = primary.describe()
 
         # --- 4. Gyorsítótár.
+        # Friss fordításnál nem olvasunk a tárból (írni viszont írunk), így a
+        # megváltozott védett kifejezések minden sorra érvényesülnek.
+        fresh = bool(getattr(self.settings, "fresh_translation", False))
+        if fresh:
+            log.info("Friss fordítás: a gyorsítótárat most nem használjuk fel.")
         translations: list[str] = [""] * len(unique_texts)
         pending: list[int] = []
         for i, text in enumerate(unique_texts):
-            hit = self.cache.get(text, primary.name, "", source_lang)
+            hit = None if fresh else self.cache.get(text, primary.name, "", source_lang)
             if hit:
                 translations[i] = hit
             else:

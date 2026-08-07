@@ -260,13 +260,17 @@ class Pipeline:
             else:
                 result.video_path = path
 
-            if not getattr(self.settings, "keep_srt_file", True) and result.video_path != path:
-                pass  # a videó nem cserélődött, a feliratot mindenképp megtartjuk
-            elif not getattr(self.settings, "keep_srt_file", True):
+            # --- 6. A külön feliratfájl sorsa --------------------------
+            # Ha a felirat bekerült az MKV-be, a külön .srt csak zavart okoz:
+            # a lejátszók (MPC, VLC) a külső fájlt részesítik előnyben, ezért
+            # két magyar felirat jelenik meg a listában, és nem az kerül elő,
+            # amit alapértelmezettnek jelöltünk. Ezért alapból töröljük.
+            muxed = getattr(self.settings, "mux_into_mkv", True) and bool(result.video_path)
+            if muxed and not getattr(self.settings, "keep_srt_file", False):
                 try:
                     os.remove(subtitle_path)
                     result.subtitle_path = ""
-                    log.debug("A külön feliratfájl törölve (a beállítás szerint).")
+                    log.info("A külön feliratfájl törölve - a felirat az MKV-ban van.")
                 except OSError as exc:
                     log.debug("A feliratfájl törlése nem sikerült: %s", exc)
 

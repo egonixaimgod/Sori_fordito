@@ -26,6 +26,7 @@ DEFAULT_PROTECTED_TERMS = [
     "Shinigami", "senpai", "sensei", "sama", "dojo", "katana", "yokai", "oni",
     # a Bleach szókincse - ha más sorozatot nézel, nyugodtan töröld
     "Soul Society", "Seireitei", "Hueco Mundo", "Karakura",
+    "Soul Reaper", "Soul King", "Royal Palace", "Squad Zero",
     "Bankai", "Shikai", "Zanpakuto", "Reiatsu", "Reishi", "Kido",
     "Hollow", "Quincy", "Arrancar", "Espada", "Sternritter", "Vizard",
 ]
@@ -53,16 +54,21 @@ class Settings:
     set_as_default: bool = True          # a magyar sáv legyen az alapértelmezett
     replace_original: bool = True        # az eredeti MKV felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
-    keep_srt_file: bool = True           # a _magyar_felirat.srt megtartása az MKV mellett
+    # Alapból NEM tartjuk meg a külön .srt-t, ha a felirat bekerült az MKV-be:
+    # a lejátszók a külső fájlt választanák, és két magyar felirat látszana.
+    keep_srt_file: bool = False
     # A mappa beolvasásakor vegye-e ki a pipát a MÁR KÉSZ fájlokból.
     # Kész = van benne magyar sáv ÉS ott a _magyar_felirat.srt is mellette.
     # A program soha nem hagy ki magától fájlt: ez csak a pipát állítja,
     # amit egy kattintással vissza lehet tenni.
-    auto_uncheck_done: bool = True
+    auto_uncheck_done: bool = False
 
     # --- Egyéb ---
     recursive_scan: bool = True          # almappák bejárása kötegelt módban
     use_cache: bool = True
+    # Friss fordítás: a korábban eltárolt sorokat sem használjuk fel, minden
+    # sor újra lefordul. Akkor kell, ha a védett kifejezések listája változott.
+    fresh_translation: bool = False
     gui_log_level: str = "INFO"
     last_file_dir: str = ""
     last_folder_dir: str = ""
