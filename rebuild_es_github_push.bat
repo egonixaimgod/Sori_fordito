@@ -136,7 +136,7 @@ echo.
 echo [2/4] Program leforditasa (PyInstaller)... 1-3 perc
 echo.
 
-if exist "build" rmdir /s /q "build" 2>nul
+if exist "%~dp0build\" rmdir /s /q "%~dp0build" 2>nul
 if exist "dist\%EXE_NAME%" del /f /q "dist\%EXE_NAME%" 2>nul
 
 %PY% -m PyInstaller --noconfirm --clean AIFordito.spec
@@ -157,6 +157,13 @@ for %%A in ("dist\%EXE_NAME%") do set "MERET=%%~zA"
 set /a MERET_MB=!MERET!/1048576
 echo.
 echo       kesz: dist\%EXE_NAME%  ^(!MERET_MB! MB^)
+
+REM --- Koztes fajlok takaritasa, hogy tiszta maradjon a projekt mappa.
+REM     A "\" a vegen fontos: igy csak MAPPAra illeszkedik a teszt.
+if exist "%~dp0build\" rmdir /s /q "%~dp0build" 2>nul
+if exist "%~dp0fordito\__pycache__\" rmdir /s /q "%~dp0fordito\__pycache__" 2>nul
+if exist "%~dp0fordito\engines\__pycache__\" rmdir /s /q "%~dp0fordito\engines\__pycache__" 2>nul
+echo       koztes fajlok torolve (build, __pycache__)
 
 REM ==================================================================
 REM  [3/4] Valtozasok osszeszedese

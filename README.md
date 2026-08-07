@@ -39,15 +39,21 @@ python main.py
 Ennyi. Az `ffmpeg.exe` és `ffprobe.exe` már a program mellett van, a fordítás pedig a
 Python beépített moduljaival megy – nincs más függőség.
 
-**Exe-ként:**
+**Exe készítése és feltöltés egy lépésben:**
 
 ```
-pip install pyinstaller
-pyinstaller AIFordito.spec
+rebuild_es_github_push.bat
 ```
+
+Ez mindent elintéz: ellenőrzi a Pythont és a függőségeket, letölti az ffmpeg-et ha
+hiányzik, lefordítja az exe-t, kitakarítja a köztes fájlokat, majd commitol és
+felpushol a GitHubra. Nem kérdez semmit, a commit üzenet automatikus.
 
 Eredmény: `dist/MagyarFeliratFordito.exe` – **egyetlen fájl, benne az ffmpeg is**.
 Bárhova másolható, semmit nem kell mellé telepíteni, csak internet kell neki.
+
+> Az exe ~123 MB, a GitHub fájlonkénti limitje 100 MB, ezért a repóba csak a
+> forráskód kerül fel. A script ezt jelzi, és emiatt nem áll le.
 
 ---
 
@@ -103,11 +109,34 @@ A régi verzió ráküldte a tageket a fordítóra, ami rendszeresen szétverte 
 Ha egy feliratban két beszélő szerepel (`- Hová mész?` / `- Iskolába megyek.`), a két
 mondat külön megy át, és külön sorban jön vissza. Egyben fordítva összefolynának.
 
-### 4. Névszótár
+### 4. Védett kifejezések – amit tilos lefordítani
 
-Beállítások → Névszótár, soronként `eredeti = magyar`. Ezeket a program a fordítás
-**előtt** cseréli le – a fordítók a latin betűs tulajdonneveket békén hagyják, így a
-szereplőnevek végig ugyanazok maradnak.
+A tulajdonneveket és a sorozat saját szakszavait a fordítók lelkesen lefordítják:
+a *Soul Society*-ből *„Lélek Társasága”* lesz. Ezért a fordítás idejére jelölőre
+cseréljük őket, és utána tesszük vissza:
+
+| | |
+|---|---|
+| Védelem nélkül | „Holnap megtámadják **a Lélek Társadalmát**.” |
+| Védelemmel | „Holnap meg fogják támadni **Soul Society**-et.” |
+
+**Beállítások → Nevek → NE FORDÍTSA**, soronként egy kifejezés. Alapból a gyakori
+anime-szakszavak már benne vannak (Shinigami, Bankai, Soul Society, Quincy…) –
+más sorozatnál nyugodtan írd át.
+
+A **„🔍 Nevek keresése a fájlból”** gomb végigolvassa a kiválasztott felirat
+szövegét, és felajánlja a benne szereplő neveket. Azt keresi, ami nagybetűs, de nem
+mondat elején áll, és legalább kétszer előfordul – ezek jellemzően tulajdonnevek.
+
+A visszahelyettesítés után a magyar névelőt is javítjuk: a fordító a jelölő alapján
+döntene („Az Soul Society”), a szabály viszont egyértelmű – magánhangzó előtt *az*,
+mássalhangzó előtt *a*.
+
+### 5. Névszótár
+
+**Beállítások → Nevek → NÉVSZÓTÁR**, soronként `eredeti = magyar`. A csere a fordítás
+**előtt** történik, és az eredmény automatikusan védetté válik. Így a japán írásjelekkel
+írt nevek is végig ugyanabban a magyar alakban szerepelnek.
 
 ---
 

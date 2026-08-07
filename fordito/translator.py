@@ -215,6 +215,136 @@ def redistribute(translated: str, parts: list[str]) -> list[str]:
     return result
 
 
+# =========================================================================
+#  Védett kifejezések - amiket tilos lefordítani
+# =========================================================================
+#
+# A tulajdonnevek és a világ saját szakszavai (Soul Society, Shinigami,
+# Bankai...) nem fordítandók. Latin betűs alakban a fordítók mégis nekiesnek
+# ("Lélek Társasága"), ezért a fordítás idejére egy jelölőre cseréljük őket,
+# és utána tesszük vissza. A jelölő mind a Microsoft, mind a Google
+# fordítóján sértetlenül átmegy - ezt méréssel ellenőriztük.
+
+_PLACEHOLDER = "XQ{}QX"
+# A fordító néha szóközt vagy kötőjelet tesz a jelölőbe, ezt is elfogadjuk.
+_PLACEHOLDER_RE = re.compile(r"X\s*Q\s*(\d{1,3})\s*Q\s*X", re.IGNORECASE)
+# Magyar névelő: magánhangzóval kezdődő szó előtt "az", egyébként "a".
+_VOWELS = "aáeéiíoóöőuúüű"
+_ARTICLE_RE_TEMPLATE = r"(?<![\wáéíóöőúüű])([Aa]z?)(\s+){}"
+
+
+def build_placeholders(terms: list[str]) -> dict[str, str]:
+    """Kifejezés -> jelölő leképezés.
+
+    A jelölő a kifejezéshez kötött (nem a szövegbeli sorrendhez), különben két
+    különböző mondat ugyanarra a maszkolt alakra egyszerűsödne, és a
+    gyorsítótár rossz visszahelyettesítést adna.
+    """
+    # Hosszabb kifejezés előbb: a "Soul Society" ne essen szét "Soul"-ra.
+    ordered = sorted({t.strip() for t in terms if t and t.strip()}, key=len, reverse=True)
+    return {term: _PLACEHOLDER.format(i) for i, term in enumerate(ordered)}
+
+
+def protect_terms(text: str, placeholders: dict[str, str]) -> str:
+    """A védett kifejezések kicserélése jelölőre, fordítás előtt."""
+    for term, marker in placeholders.items():
+        if term in text:
+            text = text.replace(term, marker)
+        else:
+            # Kis- és nagybetűtől függetlenül is megfogjuk.
+            pattern = re.compile(re.escape(term), re.IGNORECASE)
+            if pattern.search(text):
+                text = pattern.sub(marker, text)
+    return text
+
+
+def restore_terms(text: str, placeholders: dict[str, str]) -> str:
+    """A jelölők visszacserélése az eredeti kifejezésre, fordítás után."""
+    if not placeholders:
+        return text
+    by_marker = {marker.upper(): term for term, marker in placeholders.items()}
+
+    def swap(match: re.Match) -> str:
+        marker = _PLACEHOLDER.format(match.group(1)).upper()
+        return by_marker.get(marker, match.group(0))
+
+    text = _PLACEHOLDER_RE.sub(swap, text)
+    return fix_articles(text, list(placeholders.keys()))
+
+
+def fix_articles(text: str, terms: list[str]) -> str:
+    """A visszatett kifejezés elé kerülő magyar névelő javítása.
+
+    A fordító a jelölő alapján dönt "a" és "az" között, ami a valódi szónál
+    rossz lehet ("Az Soul Society"). A szabály viszont egyértelmű: magánhangzó
+    előtt "az", mássalhangzó előtt "a".
+    """
+    for term in terms:
+        if not term:
+            continue
+        correct = "az" if term[0].lower() in _VOWELS else "a"
+        pattern = re.compile(_ARTICLE_RE_TEMPLATE.format(re.escape(term)))
+
+        def replace(match: re.Match) -> str:
+            article = correct.capitalize() if match.group(1)[0].isupper() else correct
+            return f"{article}{match.group(2)}{term}"
+
+        text = pattern.sub(replace, text)
+    return text
+
+
+# Gyakori angol szavak, amik nagybetűvel is csak sima szavak maradnak.
+_COMMON_WORDS = {
+    "i", "the", "a", "an", "we", "you", "he", "she", "it", "they", "me", "him", "her",
+    "but", "and", "or", "if", "so", "then", "now", "what", "why", "how", "when", "where",
+    "who", "this", "that", "there", "here", "yes", "no", "not", "well", "oh", "ah", "hey",
+    "just", "don", "let", "all", "one", "two", "come", "get", "go", "stop", "wait", "look",
+    "my", "your", "his", "our", "their", "is", "are", "was", "were", "will", "would",
+    "can", "do", "did", "have", "has", "in", "on", "at", "to", "of", "for", "with", "as",
+    "sir", "mister", "miss", "hmm", "huh", "damn", "please", "thanks", "sorry", "okay",
+}
+_CAPITALISED = re.compile(r"\b([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)*)\b")
+
+
+def suggest_protected_terms(texts: list[str], existing: list[str] | None = None) -> list[str]:
+    """Védendő nevek felajánlása a felirat szövegéből.
+
+    Azt keressük, ami nagybetűs, de NEM mondat elején áll (ott a nagybetű
+    csak helyesírás), és legalább kétszer előfordul - ezek jellemzően
+    tulajdonnevek és a sorozat saját szakszavai.
+    """
+    known = {t.strip().lower() for t in (existing or []) if t.strip()}
+    counts: dict[str, int] = {}
+    mid_sentence: dict[str, int] = {}
+
+    for text in texts:
+        plain = " ".join(text.replace("\n", " ").split())
+        if not plain:
+            continue
+        for match in _CAPITALISED.finditer(plain):
+            phrase = match.group(1).strip()
+            if len(phrase) < 3 or phrase.lower() in _COMMON_WORDS:
+                continue
+            # Az összes szava köznév? Akkor valószínűleg nem név.
+            words = phrase.split()
+            if all(w.lower() in _COMMON_WORDS for w in words):
+                continue
+            counts[phrase] = counts.get(phrase, 0) + 1
+            # Mondat elején áll-e? (a szöveg elején, vagy írásjel után)
+            before = plain[:match.start()].rstrip()
+            if before and not before.endswith((".", "!", "?", "…", ":", "-", "\"")):
+                mid_sentence[phrase] = mid_sentence.get(phrase, 0) + 1
+
+    suggestions = [
+        phrase for phrase, count in counts.items()
+        if count >= 2 and mid_sentence.get(phrase, 0) >= 1 and phrase.lower() not in known
+    ]
+    # A gyakoribb és hosszabb kifejezések előre.
+    suggestions.sort(key=lambda p: (-counts[p], -len(p), p))
+    log.info("Névfelismerés: %d javasolt védett kifejezés.", len(suggestions))
+    return suggestions[:60]
+
+
 def apply_glossary(text: str, glossary: dict) -> str:
     """Névszótár: a forrásszöveg neveit a végleges magyar alakra cseréljük.
 
@@ -321,9 +451,17 @@ class Translator:
                             piece.capitalize = False
                             break
 
+        # A névszótár értékei is védettek: hiába cseréljük japán névről latin
+        # betűsre, a fordító azt is lefordítaná.
         glossary = getattr(self.settings, "glossary", None) or {}
+        protected = list(getattr(self.settings, "protected_terms", None) or [])
+        placeholders = build_placeholders(protected + list(glossary.values()))
+        if placeholders:
+            log.info("%d védett kifejezés (ezeket nem fordítjuk le).", len(placeholders))
+
         group_texts = [
-            apply_glossary(" ".join(units[i] for i in group), glossary) for group in groups
+            protect_terms(apply_glossary(" ".join(units[i] for i in group), glossary), placeholders)
+            for group in groups
         ]
 
         # --- 3. Ismétlődések összevonása.
@@ -419,7 +557,9 @@ class Translator:
         # --- 8. Az egyesített mondatok visszaosztása a feliratokra.
         unit_translations: list[str] = [""] * len(units)
         for group_index, group in enumerate(groups):
-            whole = translations[group_to_unique[group_index]]
+            # A jelölőket még a szétosztás ELŐTT tesszük vissza, hogy a
+            # tördelés a valódi szóhosszakkal számoljon.
+            whole = restore_terms(translations[group_to_unique[group_index]], placeholders)
             pieces = redistribute(whole, [units[i] for i in group])
             for slot, unit_index in enumerate(group):
                 value = pieces[slot] if slot < len(pieces) else ""

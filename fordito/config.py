@@ -18,6 +18,18 @@ TARGET_LANG = "hu"
 TARGET_LANG_ISO3 = "hun"
 TRACK_TITLE = "Magyar felirat"
 
+# Alapból védett kifejezések: animékben ezeket a magyar feliratok is
+# eredetiben hagyják. A listát a felhasználó bármikor átírhatja, és a program
+# a betöltött feliratból új neveket is fel tud ajánlani.
+DEFAULT_PROTECTED_TERMS = [
+    # általános
+    "Shinigami", "senpai", "sensei", "sama", "dojo", "katana", "yokai", "oni",
+    # a Bleach szókincse - ha más sorozatot nézel, nyugodtan töröld
+    "Soul Society", "Seireitei", "Hueco Mundo", "Karakura",
+    "Bankai", "Shikai", "Zanpakuto", "Reiatsu", "Reishi", "Kido",
+    "Hollow", "Quincy", "Arrancar", "Espada", "Sternritter", "Vizard",
+]
+
 
 @dataclass
 class Settings:
@@ -32,6 +44,9 @@ class Settings:
     max_lines: int = 2
     merge_sentences: bool = True         # feliratokon átnyúló mondatok egyben fordítása
     glossary: dict = field(default_factory=dict)   # "Eredeti": "Magyar" névszótár
+    # Amit tilos lefordítani: tulajdonnevek és a világ saját szakszavai.
+    # Szabadon szerkeszthető, és a program fel is tudja ajánlani a fájlból.
+    protected_terms: list = field(default_factory=lambda: list(DEFAULT_PROTECTED_TERMS))
 
     # --- MKV kezelés ---
     mux_into_mkv: bool = True            # kész felirat visszaírása az MKV-be

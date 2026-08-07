@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import queue
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -18,7 +20,8 @@ from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
 from .pipeline import Callbacks, JobResult, JobStatus, Pipeline
-from .translator import Translator
+from .subtitles import load_document
+from .translator import Translator, suggest_protected_terms
 from .util import human_time, shorten_path
 
 log = get_logger("felulet")
@@ -821,12 +824,12 @@ class SettingsWindow(ctk.CTkToplevel):
 
         tabs = ctk.CTkTabview(self, fg_color=COL_CARD, segmented_button_selected_color=COL_ACCENT)
         tabs.grid(row=0, column=0, padx=16, pady=16, sticky="nsew")
-        for name in ("MKV kimenet", "Fordítás", "Névszótár", "Haladó"):
+        for name in ("MKV kimenet", "Fordítás", "Nevek", "Haladó"):
             tabs.add(name)
 
         self._build_output(tabs.tab("MKV kimenet"))
         self._build_translation(tabs.tab("Fordítás"))
-        self._build_glossary(tabs.tab("Névszótár"))
+        self._build_glossary(tabs.tab("Nevek"))
         self._build_advanced(tabs.tab("Haladó"))
 
         ctk.CTkButton(self, text="Mentés és bezárás", height=38, font=FONT_CARD,
@@ -920,22 +923,101 @@ class SettingsWindow(ctk.CTkToplevel):
                      wraplength=520, justify="left").pack(anchor="w", padx=18, pady=(4, 0))
 
     def _build_glossary(self, tab) -> None:
-        ctk.CTkLabel(tab, text="Névszótár", font=FONT_CARD, anchor="w").pack(
-            anchor="w", padx=18, pady=(14, 2))
+        # --- 1. Ne fordítsa: tulajdonnevek és a sorozat saját szakszavai ---
+        header = ctk.CTkFrame(tab, fg_color="transparent")
+        header.pack(fill="x", padx=18, pady=(12, 2))
+        ctk.CTkLabel(header, text="NE FORDÍTSA", font=FONT_CARD, anchor="w").pack(side="left")
+        ctk.CTkButton(header, text="🔍  Nevek keresése a fájlból", width=210, height=26,
+                      font=FONT_SMALL, fg_color=COL_CARD_2, hover_color=COL_ACCENT,
+                      command=self._detect_names).pack(side="right")
+
         ctk.CTkLabel(
             tab,
-            text="Soronként egy bejegyzés, „eredeti = magyar” alakban. Ezeket a program a fordítás "
-                 "ELŐTT lecseréli, így a szereplőnevek és a visszatérő kifejezések végig ugyanúgy "
-                 "szerepelnek – a fordítók a latin betűs neveket békén hagyják.\n\n"
-                 "Példa:\n    田中 = Tanaka\n    Hokage = Hokage\n    onii-chan = bátyó",
-            font=FONT_SMALL, text_color=COL_MUTED, wraplength=520, justify="left",
-        ).pack(anchor="w", padx=18, pady=(0, 8))
+            text="Soronként egy kifejezés. Ezeket a fordítás idejére jelölőre cseréljük, utána "
+                 "visszatesszük – így érintetlenül maradnak. Enélkül a „Soul Society”-ből "
+                 "„Lélek Társasága” lesz. A gomb a kiválasztott fájlból javasol neveket.",
+            font=FONT_SMALL, text_color=COL_MUTED, wraplength=530, justify="left",
+        ).pack(anchor="w", padx=18, pady=(0, 6))
+
+        self.protected_box = ctk.CTkTextbox(tab, font=FONT_MONO, fg_color=COL_CARD_2,
+                                            corner_radius=8, height=180)
+        self.protected_box.pack(fill="both", expand=True, padx=18, pady=(0, 12))
+        self.protected_box.insert("1.0", "\n".join(self.settings.protected_terms or []))
+
+        # --- 2. Névszótár: kötelező fordítás egy adott alakra ---
+        ctk.CTkLabel(tab, text="NÉVSZÓTÁR", font=FONT_CARD, anchor="w").pack(
+            anchor="w", padx=18, pady=(4, 2))
+        ctk.CTkLabel(
+            tab,
+            text="Soronként „eredeti = magyar”. A csere a fordítás ELŐTT történik, és az "
+                 "eredmény automatikusan védett lesz.\n"
+                 "Példa:      田中 = Tanaka      onii-chan = bátyó",
+            font=FONT_SMALL, text_color=COL_MUTED, wraplength=530, justify="left",
+        ).pack(anchor="w", padx=18, pady=(0, 6))
 
         self.glossary_box = ctk.CTkTextbox(tab, font=FONT_MONO, fg_color=COL_CARD_2,
-                                           corner_radius=8, height=260)
+                                           corner_radius=8, height=110)
         self.glossary_box.pack(fill="both", expand=True, padx=18, pady=(0, 16))
         existing = "\n".join(f"{k} = {v}" for k, v in (self.settings.glossary or {}).items())
         self.glossary_box.insert("1.0", existing)
+
+    def _detect_names(self) -> None:
+        """A kiválasztott fájl feliratából javasol védendő neveket."""
+        path = self.app.source_path
+        if self.app.mode == "folder" and self.app.queue_paths:
+            path = self.app.queue_paths[0]
+        if not path or not os.path.exists(path):
+            messagebox.showinfo("Nincs fájl",
+                                "Előbb válassz ki egy fájlt vagy mappát a főablakban.",
+                                parent=self)
+            return
+
+        def work() -> None:
+            try:
+                texts = self._read_source_texts(path)
+            except Exception as exc:
+                log.warning("A névfelismerés nem sikerült: %s", exc)
+                self.app._ui(messagebox.showerror, "Nem sikerült",
+                             f"A felirat nem olvasható:\n{exc}")
+                return
+
+            current = [line.strip() for line in self.protected_box.get("1.0", "end").split("\n")]
+            found = suggest_protected_terms(texts, current)
+
+            def apply() -> None:
+                if not found:
+                    messagebox.showinfo(
+                        "Névfelismerés",
+                        "Nem találtam új nevet – vagy már mind a listában van.", parent=self)
+                    return
+                content = self.protected_box.get("1.0", "end").rstrip()
+                self.protected_box.delete("1.0", "end")
+                self.protected_box.insert("1.0", content + "\n" + "\n".join(found))
+                messagebox.showinfo(
+                    "Névfelismerés",
+                    f"{len(found)} lehetséges nevet adtam a lista végéhez.\n\n"
+                    "Nézd át, és töröld azt, amit mégis le kell fordítani.", parent=self)
+
+            self.app._ui(apply)
+
+        threading.Thread(target=work, daemon=True, name="nevfelismeres").start()
+
+    def _read_source_texts(self, path: str) -> list[str]:
+        """A forrásfelirat sorai - MKV-ból kinyerve vagy feliratfájlból."""
+        if path.lower().endswith((".srt", ".ass", ".ssa")):
+            return load_document(path).get_texts()
+
+        info = self.app.ffmpeg.probe(path)
+        track = pick_best_track(info.subtitle_tracks)
+        if not track:
+            raise RuntimeError("Nincs szöveges felirat sáv ebben a fájlban.")
+        folder = tempfile.mkdtemp(prefix="fordito_nevek_")
+        try:
+            extracted = self.app.ffmpeg.extract(
+                path, track, os.path.join(folder, f"forras{track.extension}"))
+            return load_document(extracted).get_texts()
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
 
     # ------------------------------------------------------------------
     def _clear_cache(self) -> None:
@@ -962,6 +1044,18 @@ class SettingsWindow(ctk.CTkToplevel):
             entry = getattr(self, f"entry_{attribute}", None)
             if entry is not None:
                 setattr(self.settings, attribute, entry.get().strip())
+
+        # Ne fordítsa: soronként egy kifejezés.
+        protected = [line.strip() for line in self.protected_box.get("1.0", "end").split("\n")]
+        seen: set[str] = set()
+        unique_terms: list[str] = []
+        for term in protected:
+            key = term.lower()
+            if term and key not in seen:
+                seen.add(key)
+                unique_terms.append(term)
+        self.settings.protected_terms = unique_terms
+        log.info("Védett kifejezések: %d bejegyzés mentve.", len(unique_terms))
 
         # Névszótár: "eredeti = magyar" soronként.
         glossary: dict[str, str] = {}
