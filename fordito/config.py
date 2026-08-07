@@ -35,7 +35,7 @@ DEFAULT_PROTECTED_TERMS = [
 # A beállításfájl változata. Ha nő, a load() egyszeri átállítást végez azokon
 # a kapcsolókon, amiknek megváltozott az alapértéke - különben a régi mentés
 # csendben felülírná az újat, és a felhasználó a régi viselkedést kapná.
-CONFIG_VERSION = 3
+CONFIG_VERSION = 4
 
 
 @dataclass
@@ -57,7 +57,11 @@ class Settings:
     protected_terms: list = field(default_factory=lambda: list(DEFAULT_PROTECTED_TERMS))
 
     # --- MKV kezelés ---
-    mux_into_mkv: bool = True            # kész felirat visszaírása az MKV-be
+    # ALAPBÓL KI: a felirat külön .srt fájlként él a videó mellett, mert azt
+    # minden lejátszó megjeleníti. Bekapcsolva a felirat az MKV-ba is bekerül.
+    mux_into_mkv: bool = False
+    # A régi magyar sávok kitakarítása az MKV-ból akkor is, ha nem muxolunk.
+    remove_hungarian_tracks: bool = True
     set_as_default: bool = True          # a magyar sáv legyen az alapértelmezett
     replace_original: bool = True        # az eredeti MKV felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
@@ -117,12 +121,15 @@ class Settings:
         """Régi beállításfájl igazítása az új alapértékekhez."""
         if from_version >= CONFIG_VERSION:
             return
-        if from_version < 3:
-            # A külön .srt fájlt mégis megtartjuk: van olyan lejátszó, amelyik
-            # a beágyazott sávot nem teszi ki, a külső fájlt viszont igen.
+        if from_version < 4:
+            # A felirat mostantól külön .srt fájlként él a videó mellett, és a
+            # magyar sáv kikerül az MKV-ból - így egyetlen magyar felirat van,
+            # az pedig minden lejátszóban megjelenik.
             self.keep_srt_file = True
-            log.info("Beállítás frissítve: a külön .srt fájl mostantól megmarad "
-                     "a videó mellett (biztosan megjelenő felirat).")
+            self.mux_into_mkv = False
+            self.remove_hungarian_tracks = True
+            log.info("Beállítás frissítve: a felirat külön .srt fájlba kerül, "
+                     "a magyar sávot pedig kivesszük az MKV-ból.")
         self.config_version = CONFIG_VERSION
         self.save()
 

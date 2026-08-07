@@ -254,9 +254,14 @@ class Pipeline:
             result.subtitle_path = subtitle_path
             callbacks.on_progress(STAGE_EXTRACT + STAGE_TRANSLATE)
 
-            # --- 5. Visszaírás az MKV-be -------------------------------
-            if getattr(self.settings, "mux_into_mkv", True):
+            # --- 5. Az MKV kezelése ------------------------------------
+            if getattr(self.settings, "mux_into_mkv", False):
+                # A felirat bekerül az MKV-ba, alapértelmezett sávként.
                 self._mux(path, subtitle_path, info, callbacks, result)
+            elif getattr(self.settings, "remove_hungarian_tracks", True) and info.has_hungarian:
+                # Nem muxolunk, de a régi magyar sávok kitakarodnak a fájlból,
+                # hogy egyetlen magyar felirat legyen: a külön .srt.
+                self._strip(path, info, callbacks, result)
             else:
                 result.video_path = path
 
@@ -265,7 +270,7 @@ class Pipeline:
             # a lejátszók (MPC, VLC) a külső fájlt részesítik előnyben, ezért
             # két magyar felirat jelenik meg a listában, és nem az kerül elő,
             # amit alapértelmezettnek jelöltünk. Ezért alapból töröljük.
-            muxed = getattr(self.settings, "mux_into_mkv", True) and bool(result.video_path)
+            muxed = getattr(self.settings, "mux_into_mkv", False) and bool(result.video_path)
             if muxed and not getattr(self.settings, "keep_srt_file", False):
                 try:
                     os.remove(subtitle_path)
@@ -337,6 +342,43 @@ class Pipeline:
                 try:
                     os.remove(temp_output)
                     log.debug("Félkész ideiglenes fájl törölve.")
+                except OSError:
+                    pass
+            raise
+
+    # ------------------------------------------------------------------
+    def _strip(self, path: str, info: MediaInfo, callbacks: Callbacks,
+               result: JobResult) -> None:
+        """A régi magyar sávok kiszedése az MKV-ból (új sávot nem teszünk be)."""
+        callbacks.on_stage("Régi magyar sávok eltávolítása az MKV-ból...")
+        folder = os.path.dirname(path) or "."
+        base = os.path.splitext(os.path.basename(path))[0]
+        temp_output = os.path.join(folder, f".{base}.fordito.tmp.mkv")
+
+        def strip_progress(fraction: float) -> None:
+            callbacks.on_progress(STAGE_EXTRACT + STAGE_TRANSLATE + STAGE_MUX * fraction)
+
+        try:
+            self.ffmpeg.strip_hungarian(path, info, temp_output, progress_cb=strip_progress)
+
+            callbacks.on_stage("Az elkészült fájl ellenőrzése...")
+            if not self.ffmpeg.verify_stripped(temp_output, info.duration):
+                raise MediaError("Az elkészült MKV nem ment át az ellenőrzésen.")
+
+            if getattr(self.settings, "keep_backup", False):
+                backup = path + ".bak"
+                if os.path.exists(backup):
+                    os.remove(backup)
+                os.replace(path, backup)
+                log.info("Biztonsági másolat: %s", os.path.basename(backup))
+            os.replace(temp_output, path)
+            result.video_path = path
+            log.info("A magyar sávok eltávolítva - a felirat a külön .srt fájlban van.")
+
+        except Exception:
+            if os.path.exists(temp_output):
+                try:
+                    os.remove(temp_output)
                 except OSError:
                     pass
             raise

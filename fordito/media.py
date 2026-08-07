@@ -321,6 +321,52 @@ class FFmpeg:
             raise MediaError("Az ffmpeg hibával állt le:\n" + "\n".join(tail[-8:]))
 
     # ------------------------------------------------------------------
+    def strip_hungarian(self, mkv_path: str, info: MediaInfo, output_path: str,
+                        progress_cb=None) -> str:
+        """Kiszedi az ÖSSZES magyar felirat sávot az MKV-ból, újat nem tesz be.
+
+        Akkor kell, ha a felirat külön .srt fájlként él a videó mellett: így
+        nem marad bent egy régi, felesleges magyar sáv a lejátszó listájában.
+        Videó és hang bitre pontosan másolódik.
+        """
+        dropped = [t.index for t in info.subtitle_tracks if t.is_hungarian]
+        if not dropped:
+            return ""
+
+        for track in info.subtitle_tracks:
+            if track.is_hungarian:
+                log.info("Magyar sáv eltávolítása az MKV-ból: %s", track.label)
+
+        command = [self.ffmpeg, "-y", "-loglevel", "error", "-nostats", "-i", mkv_path, "-map", "0"]
+        for index in dropped:
+            command += ["-map", f"-0:{index}"]
+        command += ["-c", "copy", "-map_chapters", "0", "-progress", "pipe:1", output_path]
+
+        log.debug("Sávtisztítás parancs: %s", " ".join(command))
+        self._run_with_progress(command, info.duration, progress_cb)
+
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            raise MediaError("A sávtisztítás nem hozott létre érvényes fájlt.")
+        return output_path
+
+    def verify_stripped(self, path: str, expected_duration: float) -> bool:
+        """Ellenőrzés: tényleg nincs már magyar sáv, és ép a fájl?"""
+        try:
+            info = self.probe(path)
+        except MediaError as exc:
+            log.error("Az elkészült fájl nem olvasható: %s", exc)
+            return False
+        if info.has_hungarian:
+            log.error("Ellenőrzés bukott: még mindig van magyar sáv a fájlban.")
+            return False
+        if expected_duration > 0 and abs(info.duration - expected_duration) > 2.0:
+            log.error("Ellenőrzés bukott: a hossz eltér (%.1f mp helyett %.1f mp).",
+                      expected_duration, info.duration)
+            return False
+        log.info("Ellenőrzés rendben: nincs magyar sáv az MKV-ban, a felirat külön fájlban van.")
+        return True
+
+    # ------------------------------------------------------------------
     def verify_muxed(self, path: str, expected_duration: float) -> bool:
         """Ellenőrzés muxolás után: tényleg bent van a magyar sáv, ép a fájl?"""
         try:

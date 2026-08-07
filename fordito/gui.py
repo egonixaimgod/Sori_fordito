@@ -891,9 +891,15 @@ class SettingsWindow(ctk.CTkToplevel):
 
     # ------------------------------------------------------------------
     def _build_output(self, tab) -> None:
-        self._switch(tab, f"A magyar felirat kerüljön bele az MKV-be", "mux_into_mkv",
-                     f"A kész felirat „{TRACK_TITLE}” néven, magyar (hun) nyelvcímkével kerül a fájlba. "
-                     "A videó és a hang bitre pontosan másolódik, nincs újrakódolás.")
+        self._switch(tab, "A magyar felirat kerüljön bele az MKV-be is", "mux_into_mkv",
+                     f"Alapból KI. A felirat külön .srt fájlként kerül a videó mellé – azt minden "
+                     f"lejátszó megjeleníti. Bekapcsolva a felirat az MKV-ba is bekerül "
+                     f"„{TRACK_TITLE}” néven, alapértelmezett sávként (videó és hang újrakódolás "
+                     "nélkül másolódik).")
+        self._switch(tab, "Régi magyar sávok kiszedése az MKV-ból", "remove_hungarian_tracks",
+                     "Fordítás után eltávolítja a fájlban lévő ÖSSZES magyar felirat sávot, hogy "
+                     "csak a most készült külön .srt maradjon. Így nincs két magyar felirat a "
+                     "lejátszó listájában.")
         self._switch(tab, "Legyen ez az alapértelmezett felirat sáv", "set_as_default",
                      "Lejátszáskor automatikusan a magyar felirat indul, a többiről lekerül az "
                      "alapértelmezett jelölés.")
@@ -1044,7 +1050,7 @@ class SettingsWindow(ctk.CTkToplevel):
 
     def _save(self) -> None:
         for attribute in ("mux_into_mkv", "set_as_default", "replace_original", "keep_backup",
-                          "keep_srt_file", "recursive_scan",
+                          "keep_srt_file", "remove_hungarian_tracks", "recursive_scan",
                           "merge_sentences", "use_cache"):
             variable = getattr(self, f"var_{attribute}", None)
             if variable is not None:
