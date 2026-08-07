@@ -27,6 +27,9 @@ log = get_logger("folyamat")
 VIDEO_EXTENSIONS = (".mkv",)
 SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa")
 
+# A videó mellé kerülő magyar feliratfájl neve: <videó neve>_magyar_felirat.srt
+SUBTITLE_SUFFIX = "_magyar_felirat"
+
 # A folyamat szakaszai és súlyuk a haladásjelzőn.
 STAGE_EXTRACT = 0.05
 STAGE_TRANSLATE = 0.80
@@ -226,7 +229,7 @@ class Pipeline:
             # --- 4. Magyar feliratfájl mentése -------------------------
             extension = os.path.splitext(extracted)[1]
             base = os.path.splitext(path)[0]
-            subtitle_path = f"{base}.hu{extension}"
+            subtitle_path = f"{base}{SUBTITLE_SUFFIX}{extension}"
             document.save(subtitle_path)
             result.subtitle_path = subtitle_path
             callbacks.on_progress(STAGE_EXTRACT + STAGE_TRANSLATE)

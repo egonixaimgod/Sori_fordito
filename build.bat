@@ -17,7 +17,7 @@ REM  1. Fut-e meg a program? (a legygakoribb build-hiba oka)
 REM ------------------------------------------------------------------
 tasklist /FI "IMAGENAME eq %EXE_NAME%" 2>nul | find /I "%EXE_NAME%" >nul
 if not errorlevel 1 (
-    echo [!] A %EXE_NAME% jelenleg fut, ezert nem lehet felulirni.
+    echo   [HIBA] A %EXE_NAME% jelenleg fut, ezert nem lehet felulirni.
     echo     Zard be a programot, aztan inditsd ujra ezt a scriptet.
     echo.
     pause
@@ -35,7 +35,7 @@ if errorlevel 1 (
     !PY! --version >nul 2>&1
     if errorlevel 1 (
         echo.
-        echo [!] Nem talalok Pythont a gepen.
+        echo   [HIBA] Nem talalok Pythont a gepen.
         echo     Telepitsd innen: https://www.python.org/downloads/
         echo     Telepiteskor pipald be az "Add Python to PATH" opciot!
         echo.
@@ -82,7 +82,7 @@ echo       hianyzik, letoltes indul (kb. 100 MB)...
 %PY% download_ffmpeg.py
 if not exist "ffmpeg.exe" (
     echo.
-    echo [!] Az ffmpeg letoltese nem sikerult.
+    echo   [HIBA] Az ffmpeg letoltese nem sikerult.
     echo     Toltsd le kezzel: https://www.gyan.dev/ffmpeg/builds/
     echo     Az ffmpeg.exe es ffprobe.exe keruljon ebbe a mappaba.
     echo.
@@ -99,7 +99,7 @@ echo [4/6] Kod ellenorzese...
 %PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines" 2>nul
 if errorlevel 1 (
     echo.
-    echo [!] A program moduljai nem importalhatok - a build ertelmetlen lenne.
+    echo   [HIBA] A program moduljai nem importalhatok - a build ertelmetlen lenne.
     echo     Reszletek:
     %PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines"
     echo.
@@ -148,8 +148,6 @@ echo     fordito_beallitasok.json   - beallitasok
 echo     fordito_cache.sqlite       - forditas gyorsitotar
 echo.
 
-choice /C IN /N /M "Megnyissam a dist mappat? [I/N] "
-if errorlevel 2 goto :vege
 explorer "%CD%\dist"
 
 :vege
@@ -161,7 +159,7 @@ REM  Hibaagak
 REM ------------------------------------------------------------------
 :pip_hiba
 echo.
-echo [!] A csomagok telepitese nem sikerult.
+echo   [HIBA] A csomagok telepitese nem sikerult.
 echo     Ellenorizd az internetkapcsolatot, vagy futtasd kezzel:
 echo     %PY% -m pip install customtkinter pyinstaller
 echo.
@@ -171,7 +169,7 @@ exit /b 1
 :build_hiba
 echo.
 echo ==================================================================
-echo   [!] A BUILD NEM SIKERULT
+echo   [HIBA] A BUILD NEM SIKERULT
 echo ==================================================================
 echo.
 echo   Nezd meg a fenti PyInstaller uzeneteket.

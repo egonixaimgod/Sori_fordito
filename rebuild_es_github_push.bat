@@ -14,15 +14,15 @@ set "EXE_NAME=MagyarFeliratFordito.exe"
 set "GITHUB_LIMIT=104857600"
 
 REM ==================================================================
-REM  [1/4] Elozetes ellenorzesek
+REM  [1/4] Elozetes ellenorzesek - minden bukjon el a build ELOTT
 REM ==================================================================
 echo [1/4] Ellenorzesek...
 
 tasklist /FI "IMAGENAME eq %EXE_NAME%" 2>nul | find /I "%EXE_NAME%" >nul
 if not errorlevel 1 (
     echo.
-    echo [!] A %EXE_NAME% jelenleg fut, ezert nem lehet felulirni.
-    echo     Zard be a programot, es inditsd ujra ezt a scriptet.
+    echo   [HIBA] A %EXE_NAME% jelenleg fut, ezert nem lehet felulirni.
+    echo          Zard be a programot, es inditsd ujra ezt a scriptet.
     echo.
     pause
     exit /b 1
@@ -35,8 +35,9 @@ if errorlevel 1 (
     !PY! --version >nul 2>&1
     if errorlevel 1 (
         echo.
-        echo [!] Nem talalok Pythont. Telepitsd: https://www.python.org/downloads/
-        echo     Telepiteskor pipald be az "Add Python to PATH" opciot!
+        echo   [HIBA] Nem talalok Pythont a gepen.
+        echo          Telepitsd: https://www.python.org/downloads/
+        echo          Telepiteskor pipald be az "Add Python to PATH" opciot.
         echo.
         pause
         exit /b 1
@@ -46,8 +47,8 @@ if errorlevel 1 (
 git rev-parse --is-inside-work-tree >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo [!] Ez a mappa nem git repo, igy nincs hova pusholni.
-    echo     Ha csak buildelni akarsz, hasznald a build.bat-ot.
+    echo   [HIBA] Ez a mappa nem git repo, igy nincs hova pusholni.
+    echo          Ha csak buildelni akarsz, hasznald a build.bat-ot.
     echo.
     pause
     exit /b 1
@@ -56,8 +57,8 @@ if errorlevel 1 (
 git remote get-url origin >nul 2>&1
 if errorlevel 1 (
     echo.
-    echo [!] Nincs beallitva "origin" tavoli repo.
-    echo     Allitsd be igy:  git remote add origin ^<github-url^>
+    echo   [HIBA] Nincs beallitva "origin" tavoli repo.
+    echo          Allitsd be igy:  git remote add origin ^<github-url^>
     echo.
     pause
     exit /b 1
@@ -67,6 +68,26 @@ for /f "tokens=*" %%R in ('git remote get-url origin') do set "REPO=%%R"
 for /f "tokens=*" %%B in ('git branch --show-current') do set "AG=%%B"
 echo       repo:   !REPO!
 echo       branch: !AG!
+
+REM --- Eleri-e a tavoli repot? Jobb most kideruljen, mint 2 perc build utan.
+echo       tavoli repo elerese...
+git ls-remote origin >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo   [HIBA] A tavoli repo nem erheto el:
+    echo          !REPO!
+    echo.
+    echo          Lehetseges okok:
+    echo            - a repo nem letezik ^(hozd letre: https://github.com/new^)
+    echo            - a repo privat es nincs bejelentkezve a git
+    echo            - elirtad az URL-t ^(javitas: git remote set-url origin ^<url^>^)
+    echo.
+    echo          A build el sem indult, semmi nem veszett el.
+    echo.
+    pause
+    exit /b 1
+)
+echo       tavoli repo: rendben
 
 %PY% -m pip show pyinstaller >nul 2>&1
 if errorlevel 1 (
@@ -89,7 +110,7 @@ echo       ffmpeg hianyzik, letoltes...
 %PY% download_ffmpeg.py
 if not exist "ffmpeg.exe" (
     echo.
-    echo [!] Az ffmpeg letoltese nem sikerult.
+    echo   [HIBA] Az ffmpeg letoltese nem sikerult.
     echo.
     pause
     exit /b 1
@@ -99,7 +120,8 @@ if not exist "ffmpeg.exe" (
 %PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines" 2>nul
 if errorlevel 1 (
     echo.
-    echo [!] A program moduljai nem importalhatok - a build ertelmetlen lenne.
+    echo   [HIBA] A program moduljai nem importalhatok - a build ertelmetlen lenne.
+    echo          Reszletek:
     %PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines"
     echo.
     pause
@@ -120,13 +142,13 @@ if exist "dist\%EXE_NAME%" del /f /q "dist\%EXE_NAME%" 2>nul
 %PY% -m PyInstaller --noconfirm --clean AIFordito.spec
 if %ERRORLEVEL% neq 0 (
     echo.
-    echo [!] Hiba a build soran! Megszakitjuk a folyamatot.
+    echo   [HIBA] Hiba a build soran, megszakitjuk a folyamatot.
     pause
     exit /b %ERRORLEVEL%
 )
 if not exist "dist\%EXE_NAME%" (
     echo.
-    echo [!] A build lefutott, de nincs kimeneti exe. Megszakitjuk.
+    echo   [HIBA] A build lefutott, de nincs kimeneti exe.
     pause
     exit /b 1
 )
@@ -134,71 +156,77 @@ if not exist "dist\%EXE_NAME%" (
 for %%A in ("dist\%EXE_NAME%") do set "MERET=%%~zA"
 set /a MERET_MB=!MERET!/1048576
 echo.
-echo       kesz: dist\%EXE_NAME%  (!MERET_MB! MB)
+echo       kesz: dist\%EXE_NAME%  ^(!MERET_MB! MB^)
 
 REM ==================================================================
-REM  [3/4] Commit uzenet
+REM  [3/4] Valtozasok osszeszedese
 REM ==================================================================
 echo.
-echo [3/4] Valtozasok...
+echo [3/4] Valtozasok osszeszedese...
+
+for /f "tokens=*" %%D in ('powershell -NoProfile -Command "Get-Date -Format \"yyyy-MM-dd HH:mm\""') do set "DATUM=%%D"
+set "UZENET=Release: automatikus build (!DATUM!)"
+
 git add -A >nul 2>&1
-
-git diff --cached --quiet
-if not errorlevel 1 (
-    set "NINCS_VALTOZAS=1"
-    echo       a forraskodban nincs valtozas
-) else (
-    set "NINCS_VALTOZAS="
-    git diff --cached --stat | more
-)
-
-echo.
-set "UZENET="
-set /p "UZENET=Commit uzenet (Enter = alapertelmezett): "
-if "!UZENET!"=="" set "UZENET=Release: automatikus build"
 
 REM --- Az exe csak akkor mehet a repoba, ha belefer a GitHub limitbe ---
 set "EXE_MEGY="
 if !MERET! LSS %GITHUB_LIMIT% (
     set "EXE_MEGY=1"
-    git add -f "dist/%EXE_NAME%"
-    echo       az exe is megy a repoba (!MERET_MB! MB)
+    git add -f "dist/%EXE_NAME%" >nul 2>&1
+    echo       az exe is megy a repoba ^(!MERET_MB! MB^)
 ) else (
-    echo.
-    echo       [!] Az exe !MERET_MB! MB, a GitHub limitje 100 MB.
-    echo           Ezert MOST CSAK A FORRASKOD megy fel - az exe kimarad,
-    echo           kulonben a push visszautasitasra kerulne.
-    echo           Az exe igy is ott van a dist mappaban, hasznalhato.
+    echo       [FIGYELEM] Az exe !MERET_MB! MB, a GitHub limitje 100 MB.
+    echo                  Ezert most csak a forraskod megy fel, az exe kimarad -
+    echo                  kulonben a GitHub visszautasitana a pusht.
+    echo                  Az exe igy is ott van a dist mappaban, hasznalhato.
 )
 
 git diff --cached --quiet
 if not errorlevel 1 (
     echo.
-    echo       Nincs mit commitolni - a repo mar naprakesz.
-    goto :vege_nincs_valtozas
+    echo ==========================================
+    echo    Nem volt mit feltolteni - naprakesz
+    echo ==========================================
+    echo.
+    pause
+    exit /b 0
 )
+
+git diff --cached --stat
 
 REM ==================================================================
 REM  [4/4] Commit es push
 REM ==================================================================
 echo.
 echo [4/4] Feltoltes a GitHubra...
-git commit -m "!UZENET!"
+echo       uzenet: !UZENET!
+
+git commit -m "!UZENET!" >nul
 if %ERRORLEVEL% neq 0 (
     echo.
-    echo [!] A commit nem sikerult.
+    echo   [HIBA] A commit nem sikerult.
     pause
     exit /b 1
 )
 
-git push
+REM --- Elso push eseten be kell allitani az upstreamet ---
+git rev-parse --abbrev-ref --symbolic-full-name "@{u}" >nul 2>&1
+if errorlevel 1 (
+    echo       elso push erre az agra, upstream beallitasa...
+    git push --set-upstream origin "!AG!"
+) else (
+    git push
+)
 if %ERRORLEVEL% neq 0 (
     echo.
-    echo [!] A push nem sikerult.
-    echo     Gyakori okok:
-    echo       - nincs bejelentkezve a git ^(allitsd be a hitelesitest^)
-    echo       - a tavoli agban ujabb commit van: futtasd elobb: git pull --rebase
-    echo       - 100 MB feletti fajl van a commitban
+    echo   [HIBA] A push nem sikerult.
+    echo          Gyakori okok:
+    echo            - nincs bejelentkezve a git ^(hitelesites^)
+    echo            - a tavoli agban ujabb commit van: git pull --rebase
+    echo            - 100 MB feletti fajl van a commitban
+    echo.
+    echo          A commit helyben megvan, csak a feltoltes maradt el.
     echo.
     pause
     exit /b 1
@@ -215,27 +243,16 @@ echo   Branch:  !AG!
 if defined EXE_MEGY (
     echo   Exe:     feltoltve ^(!MERET_MB! MB^)
 ) else (
-    echo   Exe:     kimaradt - tul nagy a GitHubnak ^(!MERET_MB! MB^)
-    echo            Ha fel akarod tenni, csinalj belole Release-t:
-    echo            https://github.com/egonixaimgod/googleTranslate_sori_fordito/releases/new
+    echo   Exe:     kimaradt, tul nagy a GitHubnak ^(!MERET_MB! MB^)
 )
-echo.
-pause
-exit /b 0
-
-:vege_nincs_valtozas
-echo.
-echo ==========================================
-echo    Nem volt mit feltolteni
-echo ==========================================
 echo.
 pause
 exit /b 0
 
 :pip_hiba
 echo.
-echo [!] A csomagok telepitese nem sikerult.
-echo     Probald kezzel:  %PY% -m pip install customtkinter pyinstaller
+echo   [HIBA] A csomagok telepitese nem sikerult.
+echo          Probald kezzel:  %PY% -m pip install customtkinter pyinstaller
 echo.
 pause
 exit /b 1

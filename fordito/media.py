@@ -253,36 +253,38 @@ class FFmpeg:
             "-i", mkv_path, "-i", subtitle_path,
         ]
 
-        # 2. Sávtérkép: minden marad az eredetiből, kivéve az eldobott magyarokat.
-        if dropped:
-            command += ["-map", "0"]
-            for index in dropped:
-                command += ["-map", f"-0:{index}"]
-        else:
-            command += ["-map", "0"]
-        command += ["-map", "1:0"]
+        # 2. Sávtérkép. A magyar felirat szándékosan a LEGELSŐ felirat sáv lesz.
+        #    Sok lejátszó (VLC, MPC-HC) nem a Matroska "default" jelzőt nézi, hanem
+        #    a saját nyelvbeállítását, vagy egyszerűen az első felirat sávot veszi.
+        #    Ha a magyar egyszerre első ÉS default, minden lejátszó eltalálja.
+        command += ["-map", "0:v?"]          # videó (és borítókép, ha van)
+        command += ["-map", "0:a?"]          # minden hangsáv
+        command += ["-map", "1:0"]           # >>> a magyar felirat: 0. felirat sáv
+        command += ["-map", "0:s?"]          # az eredeti felirat sávok utána
+        for index in dropped:
+            command += ["-map", f"-0:{index}"]
+        command += ["-map", "0:t?"]          # csatolmányok: az ASS betűtípusok!
+        command += ["-map", "0:d?"]          # adatfolyamok, ha vannak
+        command += ["-map_chapters", "0"]    # fejezetek megtartása
 
         # 3. Másolás mindenhol, semmi újrakódolás.
         command += ["-c", "copy"]
-        if subtitle_path.lower().endswith((".ass", ".ssa")):
-            command += ["-c:s:{}".format(self._new_sub_position(info, dropped)), "copy"]
 
         # 4. Az új sáv metaadatai: nyelv + magyar nyelvű megnevezés.
-        new_pos = self._new_sub_position(info, dropped)
         command += [
-            f"-metadata:s:s:{new_pos}", f"language={TARGET_LANG_ISO3}",
-            f"-metadata:s:s:{new_pos}", f"title={TRACK_TITLE}",
+            "-metadata:s:s:0", f"language={TARGET_LANG_ISO3}",
+            "-metadata:s:s:0", f"title={TRACK_TITLE}",
         ]
 
-        # 5. Alapértelmezett sáv beállítása: a magyar kap default-ot, a többiről levesszük.
+        # 5. Alapértelmezett sáv: a magyar kapja, a többiről levesszük a jelölést.
         if set_default:
-            kept = 0
+            command += ["-disposition:s:0", "default"]
+            position = 1
             for track in info.subtitle_tracks:
                 if track.index in dropped:
                     continue
-                command += [f"-disposition:s:{kept}", info.dispositions[track.sub_index]]
-                kept += 1
-            command += [f"-disposition:s:{new_pos}", "default"]
+                command += [f"-disposition:s:{position}", info.dispositions[track.sub_index]]
+                position += 1
 
         command += ["-progress", "pipe:1", output_path]
 
