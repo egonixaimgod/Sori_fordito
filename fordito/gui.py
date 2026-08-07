@@ -530,9 +530,11 @@ class App(ctk.CTk):
         try:
             if len(self.queue_paths) == 1:
                 callbacks.on_file_start(1, 1, self.queue_paths[0])
+                # Egyetlen, kézzel kiválasztott fájlnál sosem hagyunk ki semmit:
+                # ha a felhasználó ezt a fájlt jelölte ki, azt akarja, hogy lefusson.
                 result = self.pipeline.process_file(
                     self.queue_paths[0], track=chosen_track,
-                    callbacks=callbacks, cancel=self.cancel_event)
+                    callbacks=callbacks, cancel=self.cancel_event, allow_skip=False)
                 callbacks.on_file_done(result)
                 results = [result]
             else:
@@ -776,7 +778,7 @@ class SettingsWindow(ctk.CTkToplevel):
                      "külön „.hu.mkv” fájl készül mellé.")
         self._switch(tab, "Biztonsági másolat az eredetiről (.bak)", "keep_backup",
                      "Felülírás előtt az eredeti fájl átnevezve megmarad. Sok helyet foglal.")
-        self._switch(tab, "A külön .hu.srt fájl is maradjon meg", "keep_srt_file",
+        self._switch(tab, "A külön _magyar_felirat.srt fájl is maradjon meg", "keep_srt_file",
                      "Így az MKV mellett önálló feliratfájlként is megvan a fordítás.")
         self._switch(tab, "Kihagyás, ha már van benne magyar felirat", "skip_if_hungarian_exists",
                      "Kötegelt módban a már kész epizódokat átugorja - így bármikor újraindítható.")

@@ -298,11 +298,6 @@ class FFmpeg:
         log.info("Muxolás kész: %s", os.path.basename(output_path))
         return output_path
 
-    @staticmethod
-    def _new_sub_position(info: MediaInfo, dropped: list[int]) -> int:
-        """Az új magyar sáv sorszáma a kimeneti fájl felirat sávjai között."""
-        return info.all_subtitle_count - len(dropped)
-
     def _run_with_progress(self, command: list[str], duration: float, progress_cb) -> None:
         process = popen_process(command)
         tail: list[str] = []

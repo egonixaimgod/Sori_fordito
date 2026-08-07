@@ -145,6 +145,7 @@ class Pipeline:
         track: Optional[SubtitleTrack] = None,
         callbacks: Optional[Callbacks] = None,
         cancel: Optional[threading.Event] = None,
+        allow_skip: bool = True,
     ) -> JobResult:
         callbacks = callbacks or Callbacks()
         result = JobResult(path=path)
@@ -174,13 +175,20 @@ class Pipeline:
                 log.warning("%s: %s", result.name, result.message)
                 return result
 
-            if (getattr(self.settings, "skip_if_hungarian_exists", True)
+            # A kihagyás csak kötegelt módban való: ott a félbehagyott mappa
+            # folytathatósága a cél. Ha valaki egyetlen fájlt választ ki kézzel,
+            # azt akarja, hogy le is fusson - akár újra.
+            if (allow_skip
+                    and getattr(self.settings, "skip_if_hungarian_exists", True)
                     and info.has_hungarian
                     and getattr(self.settings, "mux_into_mkv", True)):
                 result.status = JobStatus.SKIPPED
                 result.message = "Már van benne magyar felirat."
                 log.info("%s: %s - kihagyva.", result.name, result.message)
                 return result
+            if not allow_skip and info.has_hungarian:
+                log.info("Van már benne magyar sáv, de egy fájlt választottál - "
+                         "újrafordítjuk, a régi magyar sáv lecserélődik.")
 
             chosen = track or pick_best_track(info.subtitle_tracks)
             if not chosen:
@@ -303,7 +311,7 @@ class Pipeline:
                 result.video_path = path
                 log.info("Az eredeti MKV lecserélve a magyar sávval bővített fájlra.")
             else:
-                final = os.path.join(folder, f"{base}.hu.mkv")
+                final = os.path.join(folder, f"{base}{SUBTITLE_SUFFIX}.mkv")
                 os.replace(temp_output, final)
                 result.video_path = final
                 log.info("Új fájl készült: %s", os.path.basename(final))
@@ -339,7 +347,7 @@ class Pipeline:
                 return result
 
             base, extension = os.path.splitext(path)
-            output = f"{base}.hu{extension}"
+            output = f"{base}{SUBTITLE_SUFFIX}{extension}"
             document.save(output)
             result.subtitle_path = output
             result.status = JobStatus.OK

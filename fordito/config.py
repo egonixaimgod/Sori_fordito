@@ -38,7 +38,7 @@ class Settings:
     set_as_default: bool = True          # a magyar sáv legyen az alapértelmezett
     replace_original: bool = True        # az eredeti MKV felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
-    keep_srt_file: bool = True           # a .hu.srt fájl megtartása az MKV mellett
+    keep_srt_file: bool = True           # a _magyar_felirat.srt megtartása az MKV mellett
     skip_if_hungarian_exists: bool = True  # kötegelt módban a kész fájlok kihagyása
 
     # --- Egyéb ---
