@@ -1,4 +1,4 @@
-"""Beállítások betöltése/mentése a program melletti JSON fájlba."""
+"""Beállítások betöltése/mentése az adatmappa JSON fájljába."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import os
 from dataclasses import asdict, dataclass, field, fields
 
 from .logsetup import get_logger
-from .util import app_dir
+from .util import data_dir
 
 log = get_logger("beallitasok")
 
@@ -95,7 +95,7 @@ class Settings:
     # ------------------------------------------------------------------
     @classmethod
     def path(cls) -> str:
-        return os.path.join(app_dir(), CONFIG_FILENAME)
+        return os.path.join(data_dir(), CONFIG_FILENAME)
 
     @classmethod
     def load(cls) -> "Settings":

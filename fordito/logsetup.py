@@ -1,4 +1,4 @@
-"""Naplózás: minden a program melletti fordito_debug.log fájlba kerül.
+"""Naplózás: minden az adatmappa (C:/MagyarFeliratFordito) fordito_debug.log fájljába kerül.
 
 A napló szándékosan bőbeszédű - ez a fejlesztés és a hibakeresés alapja.
 A felület élőben ugyanezt a folyamot mutatja egy sorbaállított handleren keresztül.
@@ -14,7 +14,8 @@ import queue
 import sys
 from typing import Optional
 
-from .util import app_dir
+from . import util
+from .util import app_dir, data_dir
 
 LOG_FILENAME = "fordito_debug.log"
 _LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(threadName)-14s | %(name)-18s | %(message)s"
@@ -46,7 +47,7 @@ def setup_logging(level: int = logging.DEBUG) -> str:
     if _configured and _log_path:
         return _log_path
 
-    _log_path = os.path.join(app_dir(), LOG_FILENAME)
+    _log_path = os.path.join(data_dir(), LOG_FILENAME)
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
@@ -92,12 +93,15 @@ def _log_banner() -> None:
     log.info("Magyar Felirat Fordító indul")
     log.info("Python %s | %s %s", sys.version.split()[0], platform.system(), platform.release())
     log.info("Gép: %s | Program mappa: %s", platform.machine(), app_dir())
+    log.info("Adatmappa: %s", data_dir())
     log.info("Naplófájl: %s", _log_path)
+    if util.migrated_files:
+        log.info("Az exe mellől átköltöztetve: %s", ", ".join(util.migrated_files))
     log.info("=" * 78)
 
 
 def log_path() -> str:
-    return _log_path or os.path.join(app_dir(), LOG_FILENAME)
+    return _log_path or os.path.join(data_dir(), LOG_FILENAME)
 
 
 def set_gui_level(level: int) -> None:

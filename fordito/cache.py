@@ -13,7 +13,7 @@ import sqlite3
 import threading
 
 from .logsetup import get_logger
-from .util import app_dir
+from .util import data_dir
 
 log = get_logger("gyorsitotar")
 
@@ -23,7 +23,7 @@ CACHE_FILENAME = "fordito_cache.sqlite"
 class TranslationCache:
     def __init__(self, enabled: bool = True):
         self.enabled = enabled
-        self.path = os.path.join(app_dir(), CACHE_FILENAME)
+        self.path = os.path.join(data_dir(), CACHE_FILENAME)
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
         self.hits = 0

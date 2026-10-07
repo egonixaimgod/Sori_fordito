@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -16,6 +17,67 @@ def app_dir() -> str:
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+DATA_DIR_NAME = "MagyarFeliratFordito"
+
+# Amit a program régen az exe mellé írt - a data_dir() első hívásakor átköltöznek.
+_OLD_FILE_PREFIXES = ("fordito_beallitasok.json", "fordito_cache.sqlite", "fordito_debug.log")
+
+_data_dir: str | None = None
+migrated_files: list[str] = []      # a napló indulása után kiírjuk, mi költözött
+
+
+def data_dir() -> str:
+    """A program saját adatmappája (beállítások, cache, napló, frissítés) a
+    rendszerlemez gyökerében, NEM az exe mellett - így az Asztalra húzott exe
+    nem szemeteli tele az Asztalt, és mindig ugyanott van minden, bárhonnan
+    indítják. Ha a gyökérbe nem írhatunk, a felhasználó AppData mappájába megy."""
+    global _data_dir
+    if _data_dir:
+        return _data_dir
+    candidates = [os.path.join(os.environ.get("SystemDrive", "C:") + "\\", DATA_DIR_NAME)]
+    if os.environ.get("LOCALAPPDATA"):
+        candidates.append(os.path.join(os.environ["LOCALAPPDATA"], DATA_DIR_NAME))
+    for path in candidates:
+        try:
+            os.makedirs(path, exist_ok=True)
+            probe = os.path.join(path, ".irhato")
+            with open(probe, "w") as handle:
+                handle.write("ok")
+            os.remove(probe)
+        except OSError:
+            continue
+        _data_dir = path
+        break
+    else:
+        _data_dir = app_dir()       # végső eset: a régi viselkedés
+    _migrate_old_files(_data_dir)
+    return _data_dir
+
+
+def _migrate_old_files(target: str) -> None:
+    """A korábban az exe mellé írt fájlok átköltöztetése az adatmappába.
+    Ha a célban már van ilyen fájl, azt nem írjuk felül (a régi marad a helyén)."""
+    source = app_dir()
+    if os.path.normcase(os.path.abspath(source)) == os.path.normcase(os.path.abspath(target)):
+        return
+    try:
+        names = os.listdir(source)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(_OLD_FILE_PREFIXES):
+            continue
+        old = os.path.join(source, name)
+        new = os.path.join(target, name)
+        if not os.path.isfile(old) or os.path.exists(new):
+            continue
+        try:
+            shutil.move(old, new)
+            migrated_files.append(name)
+        except OSError:
+            pass
 
 
 def resource_dir() -> str:

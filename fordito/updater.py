@@ -15,7 +15,7 @@ import subprocess
 import urllib.request
 
 from .logsetup import get_logger
-from .util import app_dir
+from .util import data_dir
 
 log = get_logger("frissites")
 
@@ -27,8 +27,7 @@ USER_AGENT = "MagyarFeliratFordito"
 
 
 def frissites_mappa() -> str:
-    # Az exe mellett van, hogy a csere ugyanazon a meghajtón egyszerű átnevezés legyen.
-    return os.path.join(app_dir(), "frissites")
+    return os.path.join(data_dir(), "frissites")
 
 
 def legujabb_kiadas() -> tuple[int | None, str | None]:

@@ -4,8 +4,8 @@
 # A build számot (harmadik elem) a bump_build.py írja minden kiadásnál - kézzel ne.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 0, 2, 0),
-    prodvers=(2, 0, 2, 0),
+    filevers=(2, 0, 3, 0),
+    prodvers=(2, 0, 3, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -20,12 +20,12 @@ VSVersionInfo(
         u'040904B0',
         [StringStruct(u'CompanyName', u'Egonix'),
         StringStruct(u'FileDescription', u'Magyar Felirat Fordító - MKV feliratok fordítása magyarra'),
-        StringStruct(u'FileVersion', u'2.0.2.0'),
+        StringStruct(u'FileVersion', u'2.0.3.0'),
         StringStruct(u'InternalName', u'MagyarFeliratFordito'),
         StringStruct(u'LegalCopyright', u'© 2026 Egonix'),
         StringStruct(u'OriginalFilename', u'MagyarFeliratFordito.exe'),
         StringStruct(u'ProductName', u'Magyar Felirat Fordító'),
-        StringStruct(u'ProductVersion', u'2.0.2.0')])
+        StringStruct(u'ProductVersion', u'2.0.3.0')])
       ]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]
