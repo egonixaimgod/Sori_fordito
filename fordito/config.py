@@ -87,6 +87,8 @@ class Settings:
     # sor újra lefordul. Akkor kell, ha a védett kifejezések listája változott.
     fresh_translation: bool = False
     gui_log_level: str = "INFO"
+    # Felugró ablak, ha új build van a GitHubon (a sávbeli jelzés ettől függetlenül megjelenik).
+    update_notify: bool = True
     last_file_dir: str = ""
     last_folder_dir: str = ""
 

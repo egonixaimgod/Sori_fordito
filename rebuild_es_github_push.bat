@@ -138,12 +138,12 @@ if not exist "ffmpeg.exe" (
 )
 :ffmpeg_kesz
 
-%PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines" 2>nul
+%PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines, fordito.updater" 2>nul
 if errorlevel 1 (
     echo.
     echo   [HIBA] A program moduljai nem importalhatok - a build ertelmetlen lenne.
     echo          Reszletek:
-    %PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines"
+    %PY% -c "import fordito.gui, fordito.pipeline, fordito.translator, fordito.media, fordito.subtitles, fordito.engines, fordito.updater"
     echo.
     pause
     exit /b 1

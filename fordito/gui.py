@@ -7,6 +7,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -15,7 +16,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from . import BUILD_SZAM, logsetup
+from . import BUILD_SZAM, logsetup, updater
 from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
@@ -91,6 +92,8 @@ class App(ctk.CTk):
         self.cancel_event = threading.Event()
         self.started_at = 0.0
         self.completed_files = 0
+        self.available_update: tuple[int, str | None] | None = None   # (build, exe_url)
+        self._update_window = None
 
         self.title(f"Magyar Felirat Fordító - build {BUILD_SZAM}")
         self.geometry("1180x820")
@@ -108,6 +111,7 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._check_environment()
+        self.after(1500, self._check_update)
 
     # ==================================================================
     #  Felépítés
@@ -199,6 +203,19 @@ class App(ctk.CTk):
         ctk.CTkButton(footer, text="📄  Debug napló megnyitása", font=FONT_BODY, height=32,
                       fg_color=COL_CARD_2, hover_color=COL_ACCENT,
                       command=self._open_log).grid(row=1, column=0, pady=3, sticky="ew")
+
+        # Rejtve indul; megjelenik, ha a GitHubon újabb build van.
+        self.update_badge = ctk.CTkButton(
+            footer, text="", font=FONT_SMALL, height=28, fg_color="transparent",
+            hover_color=COL_CARD_2, text_color=COL_OK, anchor="w",
+            command=self._show_update_window,
+        )
+        version_link = ctk.CTkLabel(
+            footer, text=f"build {BUILD_SZAM}  ·  frissítés keresése", font=FONT_SMALL,
+            text_color=COL_MUTED, cursor="hand2", anchor="w",
+        )
+        version_link.grid(row=3, column=0, pady=(6, 0), sticky="w")
+        version_link.bind("<Button-1>", lambda _e: self._check_update(manual=True))
 
     # ------------------------------------------------------------------
     def _build_main(self) -> None:
@@ -812,6 +829,53 @@ class App(ctk.CTk):
     def _open_settings(self) -> None:
         SettingsWindow(self)
 
+    # ==================================================================
+    #  Frissítés
+    # ==================================================================
+    def _check_update(self, manual: bool = False) -> None:
+        """Van-e újabb build a GitHubon. Induláskor magától fut, a lábléc
+        linkjéről kézzel is indítható. A felugró ablak kikapcsolható, a
+        lábléc jelzése viszont akkor is megjelenik."""
+        threading.Thread(target=self._update_worker, args=(manual,), daemon=True).start()
+
+    def _update_worker(self, manual: bool) -> None:
+        try:
+            new_build, exe_url = updater.legujabb_kiadas()
+        except Exception as exc:
+            log.info("Frissítés-ellenőrzés sikertelen: %s", exc)
+            if manual:
+                self._ui(messagebox.showwarning, "Frissítés",
+                         f"Nem sikerült ellenőrizni a frissítést:\n{exc}")
+            return
+        log.info("Frissítés-ellenőrzés: helyi build %s, GitHubon %s", BUILD_SZAM, new_build)
+        if new_build and new_build > BUILD_SZAM:
+            self.available_update = (new_build, exe_url)
+            self._ui(self._show_update_badge)
+            if manual or self.settings.update_notify:
+                self._ui(self._show_update_window)
+        elif manual:
+            self._ui(messagebox.showinfo, "Frissítés",
+                     f"A legfrissebb verziót használod (build {BUILD_SZAM}).")
+
+    def _show_update_badge(self) -> None:
+        if self.available_update:
+            self.update_badge.configure(text=f"●  Új verzió: build {self.available_update[0]}")
+            self.update_badge.grid(row=2, column=0, pady=(6, 0), sticky="ew")
+
+    def _show_update_window(self) -> None:
+        if not self.available_update:
+            return
+        if self._update_window is not None and self._update_window.winfo_exists():
+            self._update_window.focus()
+            return
+        self._update_window = UpdateWindow(self, *self.available_update)
+
+    def quit_for_update(self) -> None:
+        """Kilépés kérdés nélkül: a segédszkript már vár a folyamat végére."""
+        self.settings.save()
+        log.info("A program leáll a frissítéshez.")
+        self.destroy()
+
     def _on_close(self) -> None:
         if self.worker and self.worker.is_alive():
             if not messagebox.askyesno("Kilépés", "Épp fut egy fordítás. Biztosan kilépsz?"):
@@ -820,6 +884,152 @@ class App(ctk.CTk):
         self.settings.save()
         log.info("A program leáll.")
         self.destroy()
+
+
+# =========================================================================
+#  Frissítés ablak
+# =========================================================================
+
+class UpdateWindow(ctk.CTkToplevel):
+    """Értesítés új buildről, letöltés és telepítés."""
+
+    def __init__(self, master: App, new_build: int, exe_url: str | None):
+        super().__init__(master)
+        self.app = master
+        self.new_build = new_build
+        self.exe_url = exe_url
+        self.busy = False
+
+        self.title("Frissítés")
+        self.resizable(False, False)
+        self.configure(fg_color=COL_CARD)
+        self.transient(master)
+
+        body = ctk.CTkFrame(self, fg_color="transparent")
+        body.pack(padx=24, pady=20, fill="both")
+
+        ctk.CTkLabel(body, text="Új verzió érhető el", font=("Segoe UI Semibold", 16),
+                     text_color=COL_TEXT, anchor="w").pack(anchor="w")
+        ctk.CTkLabel(body, text=f"Jelenlegi: build {BUILD_SZAM}\nElérhető:  build {new_build}",
+                     font=FONT_BODY, text_color=COL_MUTED, justify="left", anchor="w"
+                     ).pack(anchor="w", pady=(10, 0))
+
+        self.bar = ctk.CTkProgressBar(body, width=360, progress_color=COL_ACCENT)
+        self.bar.set(0)
+        self.status = ctk.CTkLabel(body, text="", font=FONT_SMALL, text_color=COL_MUTED,
+                                   justify="left", anchor="w", wraplength=360)
+        self.status.pack(anchor="w", fill="x", pady=(12, 0))
+
+        # A jelölő a mentett beállítást tükrözi, és a pipa kivétele vissza is kapcsolja.
+        self.mute_var = tk.BooleanVar(value=not master.settings.update_notify)
+        ctk.CTkCheckBox(body, text="Ne jelenjen meg többé magától", variable=self.mute_var,
+                        font=FONT_SMALL, text_color=COL_MUTED, fg_color=COL_ACCENT,
+                        checkbox_width=18, checkbox_height=18).pack(anchor="w", pady=(14, 0))
+
+        buttons = ctk.CTkFrame(body, fg_color="transparent")
+        buttons.pack(anchor="e", pady=(16, 0))
+        self.later_btn = ctk.CTkButton(buttons, text="Később", width=100, font=FONT_BODY,
+                                       fg_color=COL_CARD_2, hover_color=COL_ERR,
+                                       command=self._close)
+        self.later_btn.pack(side="right")
+        self.install_btn = ctk.CTkButton(buttons, text="Telepítés", width=120,
+                                         font=FONT_CARD, fg_color=COL_ACCENT,
+                                         hover_color=COL_ACCENT_HOVER, command=self._start)
+        self.install_btn.pack(side="right", padx=(0, 8))
+
+        if not getattr(sys, "frozen", False):
+            # Forrásból futtatva nincs mit lecserélni.
+            self.status.configure(text="Forrásból futtatva a csere nem automatikus –\n"
+                                       "a Telepítés a letöltési oldalt nyitja meg.")
+
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.update_idletasks()
+        x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
+        y = master.winfo_rooty() + (master.winfo_height() - self.winfo_height()) // 3
+        self.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        self.after(100, self.grab_set)
+
+    def _save_mute(self) -> None:
+        notify = not self.mute_var.get()
+        if notify != self.app.settings.update_notify:
+            self.app.settings.update_notify = notify
+            self.app.settings.save()
+            log.info("Frissítési értesítés: %s", "bekapcsolva" if notify else "kikapcsolva")
+
+    def _close(self) -> None:
+        if self.busy:
+            return
+        self._save_mute()
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        self.destroy()
+
+    def _start(self) -> None:
+        self._save_mute()
+        if not getattr(sys, "frozen", False):
+            os.startfile(updater.FRISSITES_OLDAL)  # type: ignore[attr-defined]
+            self._close()
+            return
+        if not self.exe_url:
+            messagebox.showwarning("Frissítés", "A kiadáshoz nincs feltöltve program-fájl.\n"
+                                                "Töltsd le kézzel a GitHubról.", parent=self)
+            return
+        if self.app.worker and self.app.worker.is_alive():
+            # Félbeszakított fordítás közben a videófájl átírása is megszakadhatna.
+            messagebox.showwarning("Frissítés", "Épp fut egy fordítás.\n"
+                                                "Várd meg a végét (vagy állítsd le), "
+                                                "utána telepítsd a frissítést.", parent=self)
+            return
+
+        self.busy = True
+        self.install_btn.configure(state="disabled")
+        self.later_btn.configure(state="disabled")
+        self.bar.pack(fill="x", pady=(8, 0), before=self.status)
+        self.status.configure(text="Letöltés…", text_color=COL_MUTED)
+        threading.Thread(target=self._download_worker, daemon=True).start()
+
+    def _download_worker(self) -> None:
+        target = os.path.join(updater.frissites_mappa(), updater.EXE_NEV)
+        try:
+            updater.frissites_letoltes(self.exe_url, target, self._progress)
+        except Exception as exc:
+            log.warning("A frissítés letöltése nem sikerült: %s", exc)
+            self.app._ui(self._fail, str(exc))
+            return
+        self.app._ui(self._install, target)
+
+    def _progress(self, percent: float) -> None:
+        self.app._ui(self._show_progress, percent)
+
+    def _show_progress(self, percent: float) -> None:
+        try:
+            self.bar.set(percent / 100.0)
+            self.status.configure(text=f"Letöltés… {percent:.0f}%")
+        except tk.TclError:
+            pass
+
+    def _fail(self, message: str) -> None:
+        self.busy = False
+        try:
+            self.status.configure(text=f"Nem sikerült: {message}", text_color=COL_ERR)
+            self.install_btn.configure(state="normal")
+            self.later_btn.configure(state="normal")
+            self.bar.pack_forget()
+        except tk.TclError:
+            pass
+
+    def _install(self, new_exe: str) -> None:
+        self.status.configure(text="Telepítés – a program újraindul…", text_color=COL_OK)
+        self.update_idletasks()
+        try:
+            updater.frissites_telepites(new_exe, os.path.abspath(sys.executable))
+        except Exception as exc:
+            log.warning("A frissítés telepítése nem sikerült: %s", exc)
+            self._fail(str(exc))
+            return
+        self.app.quit_for_update()
 
 
 # =========================================================================
