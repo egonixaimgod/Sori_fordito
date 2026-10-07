@@ -1,7 +1,7 @@
 # Magyar Felirat Fordító
 
-MKV fájlok feliratát fordítja **magyarra**, majd a kész feliratot vissza is teszi a videóba
-alapértelmezett sávként. **Nincs regisztráció, nincs API kulcs, nincs bejelentkezés, nincs
+Videók (MKV, MP4, AVI, MOV, WEBM, …) feliratát fordítja **magyarra**. MKV-nál a kész
+feliratot kérésre vissza is teszi a videóba alapértelmezett sávként. **Nincs regisztráció, nincs API kulcs, nincs bejelentkezés, nincs
 telepítendő modell** – letöltöd az exe-t, elindítod, működik. A leggyengébb laptopon is,
 mert minden munkát online fordítószolgáltatások végeznek.
 
@@ -17,7 +17,8 @@ mert minden munkát online fordítószolgáltatások végeznek.
 
 | | |
 |---|---|
-| **Egy fájl vagy egész mappa** | Tallózol egy MKV-t, vagy ráengeded egy mappára – minden MKV-t lefordít benne, almappákkal együtt. |
+| **Egy fájl vagy egész mappa** | Tallózol egy videót, vagy ráengeded egy mappára – minden videót lefordít benne, almappákkal együtt. |
+| **MP4 és más formátumok** | MP4, M4V, MOV, AVI, WEBM, WMV, TS, MPG, FLV is megy. Ezeknél a videóhoz nem nyúl: a magyar felirat külön `_magyar_felirat.srt` fájlba kerül mellé. Ha a videóban nincs beágyazott felirat, a mellette lévő `film.srt` / `film.en.srt` fájlt fordítja le. |
 | **Két fordítómotor, kulcs nélkül** | Microsoft fordító (nyelvi modell alapú, ez az elsődleges) és Google Translate (tartalék). Egyikhez sem kell fiók. |
 | **Mondategyesítés** | Ha egy mondat két-három felirat között törik ketté, a fordító **egyben** kapja meg, és a kész magyar mondatot osztjuk vissza a feliratokra. Ez a legnagyobb minőségbeli ugrás. |
 | **Visszaírás az MKV-be** | A kész felirat bekerül a videóba `Magyar felirat` néven, `hun` nyelvcímkével, alapértelmezett sávként. Videó és hang bitre pontosan másolódik – nincs újrakódolás. |
@@ -25,7 +26,9 @@ mert minden munkát online fordítószolgáltatások végeznek.
 | **Névszótár** | Szereplőnevek és visszatérő kifejezések végig ugyanúgy szerepelnek. |
 | **Profi sortördelés** | Max. 42 karakter soronként, két sorban, mondathatáron törve. |
 | **Gyorsítótár** | Amit egyszer lefordított, többé nem kéri le. Egy évad 2–10. része sokkal gyorsabb, mint az első. |
-| **Teljes debug napló** | Minden lépés a program melletti `fordito_debug.log` fájlba kerül. |
+| **Teljes debug napló** | Minden lépés a `C:\MagyarFeliratFordito\fordito_debug.log` fájlba kerül. |
+| **Saját adatmappa** | Beállítás, gyorsítótár, napló mind a `C:\MagyarFeliratFordito` mappában van – az exe mellé (pl. az Asztalra) semmit nem ír. |
+| **Automatikus frissítés** | Induláskor megnézi a GitHubon, van-e újabb build, és egy kattintással lecseréli magát. |
 
 ---
 
@@ -46,21 +49,22 @@ rebuild_es_github_push.bat
 ```
 
 Ez mindent elintéz: ellenőrzi a Pythont és a függőségeket, letölti az ffmpeg-et ha
-hiányzik, lefordítja az exe-t, kitakarítja a köztes fájlokat, majd commitol és
-felpushol a GitHubra. Nem kérdez semmit, a commit üzenet automatikus.
+hiányzik, eggyel növeli a build számot, lefordítja az exe-t, commitol, felpushol a
+GitHubra, végül `build-N` néven GitHub Release-t készít az exe-vel. A program
+automatikus frissítője ezt a Release-t keresi.
 
 Eredmény: `dist/MagyarFeliratFordito.exe` – **egyetlen fájl, benne az ffmpeg is**.
 Bárhova másolható, semmit nem kell mellé telepíteni, csak internet kell neki.
 
 > Az exe ~123 MB, a GitHub fájlonkénti limitje 100 MB, ezért a repóba csak a
-> forráskód kerül fel. A script ezt jelzi, és emiatt nem áll le.
+> forráskód kerül fel – az exe a Release mellékleteként érhető el (ott 2 GB a limit).
 
 ---
 
 ## Használat
 
 1. **Mód**: „Egy fájl” vagy „Egész mappa”.
-2. **Tallózás** – MKV, vagy külön `.srt` / `.ass` fájl is lehet.
+2. **Tallózás** – videó (MKV, MP4, …), vagy külön `.srt` / `.ass` fájl is lehet.
 3. **Forrás felirat sáv** – hagyd „Automatikus”-on. A program pontozza a sávokat:
    előnyben részesíti az angolt a japán előtt (megbízhatóbb belőle a fordítás),
    hátrasorolja a „Signs & Songs” és kényszerített sávokat, és kihagyja a képalapúakat.
@@ -233,14 +237,14 @@ A program által generált fájlok (mind a program mellett):
 
 ## Hibakeresés
 
-**Minden a `fordito_debug.log` fájlban van** – a felületen a „📄 Debug napló megnyitása”
+**Minden a `C:\MagyarFeliratFordito\fordito_debug.log` fájlban van** – a felületen a „📄 Debug napló megnyitása”
 gombbal nyílik. Benne van minden ffmpeg parancs, minden sávdöntés, minden fordítási
 kérés, minden újrapróbálkozás és minden hiba a teljes veremmel.
 
 | Tünet | Ok / megoldás |
 |---|---|
 | „Csak képalapú felirat van benne” | PGS/VobSub sáv, képekből áll. Szöveg nincs benne, OCR kellene hozzá. |
-| „Nincs benne felirat sáv” | Az MKV-ben nincs beépített felirat. |
+| „Nincs benne felirat sáv, és mellette sincs feliratfájl” | A videóban nincs beépített felirat, és azonos nevű `.srt` / `.ass` sincs mellette. |
 | „Egyik fordítószolgáltatás sem érhető el” | Nincs internet, vagy tűzfal/proxy blokkol. |
 | Egy-egy sor eredeti nyelven marad | Mindkét motor elhasalt rajta. A napló megmondja, melyiken és miért. |
 | Lassú | Csökkentsd a párhuzamos kérések számát – ha a szolgáltatás korlátoz, a várakozás lassít. |

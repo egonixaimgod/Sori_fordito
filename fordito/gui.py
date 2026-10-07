@@ -20,10 +20,11 @@ from . import BUILD_SZAM, logsetup, updater
 from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
-from .pipeline import Callbacks, JobResult, JobStatus, Pipeline
+from .pipeline import (MUXABLE_EXTENSIONS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, Callbacks,
+                       JobResult, JobStatus, Pipeline, find_sidecar_subtitle)
 from .subtitles import load_document
 from .translator import Translator, suggest_protected_terms
-from .util import human_time, shorten_path
+from .util import human_time, resource_dir, shorten_path
 
 log = get_logger("felulet")
 
@@ -48,6 +49,9 @@ FONT_BODY = ("Segoe UI", 12)
 FONT_SMALL = ("Segoe UI", 11)
 FONT_MONO = ("Consolas", 11)
 
+VIDEO_PATTERNS = [f"*{ext}" for ext in VIDEO_EXTENSIONS]
+SUBTITLE_PATTERNS = [f"*{ext}" for ext in SUBTITLE_EXTENSIONS]
+
 LOG_LEVELS = {"Minden (részletes)": logging.DEBUG, "Normál": logging.INFO,
               "Csak figyelmeztetés": logging.WARNING, "Csak hiba": logging.ERROR}
 ENGINE_CHOICES = {
@@ -61,6 +65,17 @@ STATUS_COLORS = {
     JobStatus.ERROR: COL_ERR,
     JobStatus.CANCELLED: COL_WARN,
 }
+
+
+def _set_icon(window) -> None:
+    """A program ikonja az ablakra. A CustomTkinter csak akkor rakja rá a saját
+    alap ikonját, ha mi nem hívtunk iconbitmap-et - ezért minden ablaknál kell."""
+    path = os.path.join(resource_dir(), "icon_fordito.ico")
+    if os.path.exists(path):
+        try:
+            window.iconbitmap(path)
+        except tk.TclError:
+            pass
 
 
 def _card(parent, title: str) -> ctk.CTkFrame:
@@ -96,6 +111,7 @@ class App(ctk.CTk):
         self._update_window = None
 
         self.title(f"Magyar Felirat Fordító - build {BUILD_SZAM}")
+        _set_icon(self)
         self.geometry("1180x820")
         self.minsize(980, 700)
         self.configure(fg_color=COL_BG)
@@ -124,7 +140,7 @@ class App(ctk.CTk):
 
         ctk.CTkLabel(header, text="  Magyar Felirat Fordító", font=FONT_TITLE,
                      text_color=COL_TEXT).grid(row=0, column=0, padx=(18, 0), pady=(12, 0), sticky="w")
-        ctk.CTkLabel(header, text="   MKV feliratok fordítása magyarra – helyben, fiók és API kulcs nélkül",
+        ctk.CTkLabel(header, text="   Videók (MKV, MP4, …) feliratainak fordítása magyarra – fiók és API kulcs nélkül",
                      font=FONT_SMALL, text_color=COL_MUTED).grid(row=1, column=0, padx=(20, 0),
                                                                  pady=(0, 10), sticky="w")
 
@@ -229,7 +245,7 @@ class App(ctk.CTk):
         source = _card(main, "1 ·  FORRÁS")
         source.grid(row=0, column=0, sticky="ew", pady=(0, 12))
 
-        self.path_entry = ctk.CTkEntry(source, placeholder_text="Válassz MKV fájlt vagy mappát…",
+        self.path_entry = ctk.CTkEntry(source, placeholder_text="Válassz videót (MKV, MP4, …), feliratot vagy mappát…",
                                        font=FONT_BODY, height=36, fg_color=COL_CARD_2, border_width=0)
         self.path_entry.grid(row=1, column=0, columnspan=2, padx=(14, 8), pady=(0, 12), sticky="ew")
 
@@ -332,7 +348,7 @@ class App(ctk.CTk):
             if not self.ffmpeg.available():
                 self._ui(messagebox.showerror, "Hiányzó ffmpeg",
                          "Az ffmpeg.exe nem található a program mellett és a PATH-ban sem.\n"
-                         "Enélkül nem tudok MKV fájlt kezelni.")
+                         "Enélkül nem tudok videófájlt kezelni.")
             self._refresh_engine_status()
 
         threading.Thread(target=check, daemon=True, name="kornyezet").start()
@@ -372,8 +388,8 @@ class App(ctk.CTk):
         self.mode = "folder" if value == "Egész mappa" else "file"
         log.info("Mód: %s", "egész mappa" if self.mode == "folder" else "egy fájl")
         self.path_entry.configure(placeholder_text=(
-            "Válassz mappát, minden MKV lefordul benne…" if self.mode == "folder"
-            else "Válassz MKV vagy felirat fájlt…"))
+            "Válassz mappát, minden videó lefordul benne…" if self.mode == "folder"
+            else "Válassz videót (MKV, MP4, …) vagy feliratfájlt…"))
         # A sávválasztó mindkét módban látszik. Mappás módban a mappa első
         # fájljának sávjait kínáljuk, és a választott sávot minden fájlban
         # megkeressük - nyelv és cím alapján, mert az index fájlonként csúszhat.
@@ -411,8 +427,9 @@ class App(ctk.CTk):
             path = filedialog.askopenfilename(
                 title="Válassz fájlt",
                 initialdir=self.settings.last_file_dir or None,
-                filetypes=[("Videó és felirat", "*.mkv *.srt *.ass *.ssa"),
-                           ("MKV videó", "*.mkv"), ("Felirat", "*.srt *.ass *.ssa"),
+                filetypes=[("Videó és felirat", " ".join(VIDEO_PATTERNS + SUBTITLE_PATTERNS)),
+                           ("Videó", " ".join(VIDEO_PATTERNS)),
+                           ("Felirat", " ".join(SUBTITLE_PATTERNS)),
                            ("Minden fájl", "*.*")],
             )
             if path:
@@ -436,7 +453,7 @@ class App(ctk.CTk):
         else:
             self.queue_paths = [path]
             self._render_queue()
-            if path.lower().endswith(".mkv"):
+            if path.lower().endswith(VIDEO_EXTENSIONS):
                 threading.Thread(target=self._analyze, daemon=True, name="elemzes").start()
             else:
                 self.track_menu.configure(values=["Külön feliratfájl – nincs sávválasztás"])
@@ -453,19 +470,19 @@ class App(ctk.CTk):
         self.queue_paths = paths
         self._ui(self._render_queue)
         if not paths:
-            self._ui(self.stage_label.configure, text="Nem találtam MKV fájlt ebben a mappában.")
+            self._ui(self.stage_label.configure, text="Nem találtam videófájlt ebben a mappában.")
             return
-        self._ui(self.stage_label.configure, text=f"{len(paths)} MKV fájl a sorban.")
+        self._ui(self.stage_label.configure, text=f"{len(paths)} videófájl a sorban.")
 
         # A sávlistát a mappa első fájljából olvassuk ki - egy évadon belül
         # a sávok elrendezése jellemzően minden epizódban azonos.
         self._ui(self.stage_label.configure,
-                 text=f"{len(paths)} MKV fájl · sávok beolvasása az első fájlból…")
+                 text=f"{len(paths)} videófájl · sávok beolvasása az első fájlból…")
         try:
             info = self.ffmpeg.probe(paths[0])
         except MediaError as exc:
             log.warning("Az első fájl sávjai nem olvashatók: %s", exc)
-            self._ui(self.stage_label.configure, text=f"{len(paths)} MKV fájl a sorban.")
+            self._ui(self.stage_label.configure, text=f"{len(paths)} videófájl a sorban.")
             return
 
         self.media_info = info
@@ -478,7 +495,7 @@ class App(ctk.CTk):
             self.track_menu.set(values[0])
             extra = f" · ajánlott: {best.label}" if best else ""
             self.stage_label.configure(
-                text=f"{len(paths)} MKV fájl · {len(self.tracks)} felirat sáv az első fájlban{extra}")
+                text=f"{len(paths)} videófájl · {len(self.tracks)} felirat sáv az első fájlban{extra}")
 
         self._ui(apply)
 
@@ -500,8 +517,14 @@ class App(ctk.CTk):
         def apply() -> None:
             self.track_menu.configure(values=values)
             self.track_menu.set(values[0])
-            if not self.tracks:
-                self.stage_label.configure(text="Nincs felirat sáv ebben a fájlban.")
+            sidecar = find_sidecar_subtitle(self.source_path) if not info.text_tracks else None
+            if sidecar:
+                self.stage_label.configure(
+                    text=f"Nincs beágyazott szöveges felirat – a mellette lévő "
+                         f"„{os.path.basename(sidecar)}” fájlt fordítom le.")
+            elif not self.tracks:
+                self.stage_label.configure(
+                    text="Nincs felirat sáv ebben a fájlban, és mellette sincs feliratfájl.")
             else:
                 extra = f"  ·  ajánlott: {best.label}" if best else "  ·  csak képalapú sáv van!"
                 self.stage_label.configure(text=f"{len(self.tracks)} felirat sáv{extra}")
@@ -750,7 +773,8 @@ class App(ctk.CTk):
             text=f"Kész!  {len(ok)} sikeres, {len(skipped)} kihagyott, {len(failed)} hibás  ·  {human_time(elapsed)}")
 
         lines = [f"Elkészült {len(ok)} fájl {human_time(elapsed)} alatt."]
-        if self.settings.mux_into_mkv and ok:
+        if self.settings.mux_into_mkv and any(r.path.lower().endswith(MUXABLE_EXTENSIONS)
+                                              for r in ok):
             lines.append(f"\nA magyar felirat „{TRACK_TITLE}” néven bekerült az MKV fájlokba, "
                          "alapértelmezett sávként.")
         if skipped:
@@ -901,6 +925,7 @@ class UpdateWindow(ctk.CTkToplevel):
         self.busy = False
 
         self.title("Frissítés")
+        _set_icon(self)
         self.resizable(False, False)
         self.configure(fg_color=COL_CARD)
         self.transient(master)
@@ -1043,6 +1068,7 @@ class SettingsWindow(ctk.CTkToplevel):
         self.settings = master.settings
 
         self.title("Beállítások")
+        _set_icon(self)
         self.geometry("620x680")
         self.configure(fg_color=COL_BG)
         self.transient(master)
@@ -1105,7 +1131,8 @@ class SettingsWindow(ctk.CTkToplevel):
                      f"Alapból KI. A felirat külön .srt fájlként kerül a videó mellé – azt minden "
                      f"lejátszó megjeleníti. Bekapcsolva a felirat az MKV-ba is bekerül "
                      f"„{TRACK_TITLE}” néven, alapértelmezett sávként (videó és hang újrakódolás "
-                     "nélkül másolódik).")
+                     "nélkül másolódik). Csak MKV-nál: MP4 és más formátum esetén a videóhoz nem nyúl, "
+                     "a felirat mindig külön fájlba kerül.")
         self._switch(tab, "Régi magyar sávok kiszedése az MKV-ból", "remove_hungarian_tracks",
                      "Fordítás után eltávolítja a fájlban lévő ÖSSZES magyar felirat sávot, hogy "
                      "csak a most készült külön .srt maradjon. Így nincs két magyar felirat a "
@@ -1124,7 +1151,7 @@ class SettingsWindow(ctk.CTkToplevel):
                      "felirat biztosan látszik. Cserébe két magyar bejegyzés lesz a lejátszó "
                      "listájában – a lejátszó a külsőt választja, és az működik.")
         self._switch(tab, "Almappák bejárása is", "recursive_scan",
-                     "Mappás módban az összes almappában megkeresi az MKV fájlokat.")
+                     "Mappás módban az összes almappában megkeresi a videófájlokat.")
 
     def _build_translation(self, tab) -> None:
         self._switch(tab, "Feliratokon átnyúló mondatok egyben fordítása", "merge_sentences",
@@ -1237,14 +1264,17 @@ class SettingsWindow(ctk.CTkToplevel):
         threading.Thread(target=work, daemon=True, name="nevfelismeres").start()
 
     def _read_source_texts(self, path: str) -> list[str]:
-        """A forrásfelirat sorai - MKV-ból kinyerve vagy feliratfájlból."""
-        if path.lower().endswith((".srt", ".ass", ".ssa")):
+        """A forrásfelirat sorai - videóból kinyerve vagy feliratfájlból."""
+        if path.lower().endswith(SUBTITLE_EXTENSIONS):
             return load_document(path).get_texts()
 
         info = self.app.ffmpeg.probe(path)
         track = pick_best_track(info.subtitle_tracks)
         if not track:
-            raise RuntimeError("Nincs szöveges felirat sáv ebben a fájlban.")
+            sidecar = find_sidecar_subtitle(path)
+            if sidecar:
+                return load_document(sidecar).get_texts()
+            raise RuntimeError("Nincs szöveges felirat sáv ebben a fájlban, és mellette sincs feliratfájl.")
         folder = tempfile.mkdtemp(prefix="fordito_nevek_")
         try:
             extracted = self.app.ffmpeg.extract(

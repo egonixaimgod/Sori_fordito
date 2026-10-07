@@ -1,4 +1,4 @@
-"""A teljes munkafolyamat: elemzés -> kinyerés -> fordítás -> visszaírás az MKV-be.
+"""A teljes munkafolyamat: elemzés -> kinyerés -> fordítás -> külön felirat / visszaírás az MKV-be.
 
 Egy fájl és egy egész mappa feldolgozása ugyanazon az úton megy végig, így
 kötegelt módban is pontosan az történik, mint egyetlen fájlnál.
@@ -25,11 +25,47 @@ from .util import Stopwatch, human_time, human_size
 
 log = get_logger("folyamat")
 
-VIDEO_EXTENSIONS = (".mkv",)
+VIDEO_EXTENSIONS = (".mkv", ".mp4", ".m4v", ".mov", ".avi", ".webm", ".wmv",
+                    ".ts", ".m2ts", ".mpg", ".mpeg", ".flv")
 SUBTITLE_EXTENSIONS = (".srt", ".ass", ".ssa")
+# Csak az MKV-ba írunk vissza (sáv be/ki). A többi konténer (MP4, AVI, ...) nem
+# tud rendesen SRT/ASS sávot tárolni, ezért azoknál a videó érintetlen marad, és
+# a magyar felirat külön fájlba kerül mellé - ezt minden lejátszó megjeleníti.
+MUXABLE_EXTENSIONS = (".mkv",)
 
 # A videó mellé kerülő magyar feliratfájl neve: <videó neve>_magyar_felirat.srt
 SUBTITLE_SUFFIX = "_magyar_felirat"
+
+# Külső feliratfájl nyelvjelölései a fájlnévben (film.en.srt, film.eng.srt ...).
+_SIDECAR_PREFERRED = ("", "en", "eng", "english", "angol")
+_SIDECAR_HUNGARIAN = ("hu", "hun", "hungarian", "magyar")
+
+
+def find_sidecar_subtitle(video_path: str) -> Optional[str]:
+    """A videó melletti, azonos nevű feliratfájl (film.srt, film.en.srt, ...).
+
+    MP4-nél gyakori, hogy a felirat nincs beágyazva, csak ott van mellette.
+    A saját kimenetünket (_magyar_felirat) és a már magyar fájlokat kihagyjuk;
+    több jelölt közül a jelöletlen vagy angol az első."""
+    folder = os.path.dirname(video_path) or "."
+    base = os.path.splitext(os.path.basename(video_path))[0]
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return None
+    candidates: list[tuple[int, str]] = []
+    for name in names:
+        stem, extension = os.path.splitext(name)
+        if extension.lower() not in SUBTITLE_EXTENSIONS or SUBTITLE_SUFFIX in stem:
+            continue
+        if stem != base and not stem.startswith(base + "."):
+            continue
+        tag = stem[len(base) + 1:].lower() if stem != base else ""
+        if any(part in _SIDECAR_HUNGARIAN for part in tag.split(".")):
+            continue
+        rank = _SIDECAR_PREFERRED.index(tag) if tag in _SIDECAR_PREFERRED else len(_SIDECAR_PREFERRED)
+        candidates.append((rank, os.path.join(folder, name)))
+    return min(candidates)[1] if candidates else None
 
 # A folyamat szakaszai és súlyuk a haladásjelzőn.
 STAGE_EXTRACT = 0.05
@@ -95,7 +131,7 @@ class Pipeline:
                     found.append(full)
         total_size = sum(os.path.getsize(p) for p in found if os.path.exists(p))
         log.info(
-            "Mappa átnézve: %s -> %d MKV fájl (%s), almappákkal: %s",
+            "Mappa átnézve: %s -> %d videófájl (%s), almappákkal: %s",
             folder, len(found), human_size(total_size), "igen" if recursive else "nem",
         )
         return found
@@ -179,9 +215,22 @@ class Pipeline:
             callbacks.on_progress(0.01)
             info = self.ffmpeg.probe(path)
 
+            # Nincs (szöveges) beágyazott felirat: a videó melletti feliratfájlt fordítjuk.
+            if track is None and not info.text_tracks:
+                sidecar = find_sidecar_subtitle(path)
+                if sidecar:
+                    log.info("Nincs beágyazott szöveges felirat - a mellette lévő "
+                             "feliratfájlt fordítjuk: %s", os.path.basename(sidecar))
+                    extension = os.path.splitext(sidecar)[1]
+                    output = f"{os.path.splitext(path)[0]}{SUBTITLE_SUFFIX}{extension}"
+                    sidecar_result = self._process_subtitle_file(
+                        sidecar, callbacks, cancel, watch, output_path=output)
+                    sidecar_result.path = path
+                    return sidecar_result
+
             if not info.subtitle_tracks:
                 result.status = JobStatus.SKIPPED
-                result.message = "Nincs benne felirat sáv."
+                result.message = "Nincs benne felirat sáv, és mellette sincs feliratfájl."
                 log.warning("%s: %s", result.name, result.message)
                 return result
 
@@ -255,7 +304,13 @@ class Pipeline:
             callbacks.on_progress(STAGE_EXTRACT + STAGE_TRANSLATE)
 
             # --- 5. Az MKV kezelése ------------------------------------
-            if getattr(self.settings, "mux_into_mkv", False):
+            is_mkv = path.lower().endswith(MUXABLE_EXTENSIONS)
+            if not is_mkv:
+                # MP4, AVI, ...: a videóhoz nem nyúlunk, a felirat külön fájlban van.
+                result.video_path = path
+                log.info("Nem MKV - a videó változatlan, a magyar felirat külön fájlban: %s",
+                         os.path.basename(subtitle_path))
+            elif getattr(self.settings, "mux_into_mkv", False):
                 # A felirat bekerül az MKV-ba, alapértelmezett sávként.
                 self._mux(path, subtitle_path, info, callbacks, result)
             elif getattr(self.settings, "remove_hungarian_tracks", True) and info.has_hungarian:
@@ -270,7 +325,7 @@ class Pipeline:
             # a lejátszók (MPC, VLC) a külső fájlt részesítik előnyben, ezért
             # két magyar felirat jelenik meg a listában, és nem az kerül elő,
             # amit alapértelmezettnek jelöltünk. Ezért alapból töröljük.
-            muxed = getattr(self.settings, "mux_into_mkv", False) and bool(result.video_path)
+            muxed = is_mkv and getattr(self.settings, "mux_into_mkv", False) and bool(result.video_path)
             if muxed and not getattr(self.settings, "keep_srt_file", False):
                 try:
                     os.remove(subtitle_path)
@@ -385,8 +440,12 @@ class Pipeline:
 
     # ------------------------------------------------------------------
     def _process_subtitle_file(self, path: str, callbacks: Callbacks,
-                               cancel: Optional[threading.Event], watch: Stopwatch) -> JobResult:
-        """Külön feliratfájl (SRT/ASS) fordítása - videó nélkül."""
+                               cancel: Optional[threading.Event], watch: Stopwatch,
+                               output_path: str = "") -> JobResult:
+        """Külön feliratfájl (SRT/ASS) fordítása - videó nélkül.
+
+        Az `output_path` akkor kell, ha a fájl egy videó melletti felirat: a
+        kimenet ilyenkor a VIDEÓ nevét kapja (film_magyar_felirat.srt)."""
         result = JobResult(path=path)
         try:
             callbacks.on_stage("Feliratfájl beolvasása...")
@@ -405,7 +464,7 @@ class Pipeline:
                 return result
 
             base, extension = os.path.splitext(path)
-            output = f"{base}{SUBTITLE_SUFFIX}{extension}"
+            output = output_path or f"{base}{SUBTITLE_SUFFIX}{extension}"
             document.save(output)
             result.subtitle_path = output
             result.status = JobStatus.OK

@@ -6,7 +6,8 @@ Az eredmény: dist/MagyarFeliratFordito.exe (az ffmpeg is benne van).
 """
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('ffmpeg.exe', '.'), ('ffprobe.exe', '.')]
+# Az ikon a futó ablakhoz is kell (a program a resource_dir()-ből tölti be).
+datas = [('ffmpeg.exe', '.'), ('ffprobe.exe', '.'), ('icon_fordito.ico', '.')]
 binaries = []
 hiddenimports = ['fordito', 'fordito.engines']
 
@@ -52,4 +53,5 @@ exe = EXE(
     entitlements_file=None,
     # A build számot a bump_build.py írja bele minden kiadásnál.
     version='version_info.txt',
+    icon=['icon_fordito.ico'],
 )
