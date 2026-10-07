@@ -15,7 +15,7 @@ from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 
-from . import logsetup
+from . import BUILD_SZAM, logsetup
 from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
@@ -92,7 +92,7 @@ class App(ctk.CTk):
         self.started_at = 0.0
         self.completed_files = 0
 
-        self.title("Magyar Felirat Fordító")
+        self.title(f"Magyar Felirat Fordító - build {BUILD_SZAM}")
         self.geometry("1180x820")
         self.minsize(980, 700)
         self.configure(fg_color=COL_BG)

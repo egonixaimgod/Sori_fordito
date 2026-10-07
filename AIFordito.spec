@@ -50,4 +50,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    # A build számot a bump_build.py írja bele minden kiadásnál.
+    version='version_info.txt',
 )

@@ -1,0 +1,32 @@
+# UTF-8
+#
+# Windows fájlverzió-infó erőforrás a PyInstaller buildhez (exe Tulajdonságok ablak).
+# A build számot (harmadik elem) a bump_build.py írja minden kiadásnál - kézzel ne.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(2, 0, 1, 0),
+    prodvers=(2, 0, 1, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        u'040904B0',
+        [StringStruct(u'CompanyName', u'Egonix'),
+        StringStruct(u'FileDescription', u'Magyar Felirat Fordító - MKV feliratok fordítása magyarra'),
+        StringStruct(u'FileVersion', u'2.0.1.0'),
+        StringStruct(u'InternalName', u'MagyarFeliratFordito'),
+        StringStruct(u'LegalCopyright', u'© 2026 Egonix'),
+        StringStruct(u'OriginalFilename', u'MagyarFeliratFordito.exe'),
+        StringStruct(u'ProductName', u'Magyar Felirat Fordító'),
+        StringStruct(u'ProductVersion', u'2.0.1.0')])
+      ]),
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
+  ]
+)
