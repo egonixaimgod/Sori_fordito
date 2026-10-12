@@ -231,12 +231,12 @@ class FFmpeg:
         subtitle_path: str,
         info: MediaInfo,
         output_path: str,
-        set_default: bool = True,
         drop_existing_hungarian: bool = True,
         progress_cb=None,
     ) -> str:
-        """A magyar feliratot beleteszi az MKV-be, alapértelmezett sávként.
+        """A magyar feliratot beleteszi a videóba, első és alapértelmezett sávként.
 
+        A konténert az output_path kiterjesztése adja (MKV, MP4/MOV, WEBM).
         Videó és hang bitre pontosan másolódik - nincs újrakódolás, nincs
         minőségvesztés, és néhány másodperc alatt lefut.
         """
@@ -263,12 +263,20 @@ class FFmpeg:
         command += ["-map", "0:s?"]          # az eredeti felirat sávok utána
         for index in dropped:
             command += ["-map", f"-0:{index}"]
-        command += ["-map", "0:t?"]          # csatolmányok: az ASS betűtípusok!
-        command += ["-map", "0:d?"]          # adatfolyamok, ha vannak
+        # Csatolmány (ASS betűtípusok) és adatfolyam csak MKV -> MKV esetén: más
+        # konténerbe (MP4, vagy TS -> MKV) ezek gyakran nem írhatók, és az egész elbukna.
+        if mkv_path.lower().endswith(".mkv") and output_path.lower().endswith(".mkv"):
+            command += ["-map", "0:t?", "-map", "0:d?"]
         command += ["-map_chapters", "0"]    # fejezetek megtartása
 
-        # 3. Másolás mindenhol, semmi újrakódolás.
+        # 3. Másolás mindenhol, semmi újrakódolás - kivéve az új sávot, ha a
+        #    konténer csak a saját felirat-formátumát fogadja el.
         command += ["-c", "copy"]
+        out_ext = os.path.splitext(output_path)[1].lower()
+        if out_ext in (".mp4", ".m4v", ".mov"):
+            command += ["-c:s:0", "mov_text"]
+        elif out_ext == ".webm":
+            command += ["-c:s:0", "webvtt"]
 
         # 4. Az új sáv metaadatai: nyelv + magyar nyelvű megnevezés.
         command += [
@@ -277,14 +285,13 @@ class FFmpeg:
         ]
 
         # 5. Alapértelmezett sáv: a magyar kapja, a többiről levesszük a jelölést.
-        if set_default:
-            command += ["-disposition:s:0", "default"]
-            position = 1
-            for track in info.subtitle_tracks:
-                if track.index in dropped:
-                    continue
-                command += [f"-disposition:s:{position}", info.dispositions[track.sub_index]]
-                position += 1
+        command += ["-disposition:s:0", "default"]
+        position = 1
+        for track in info.subtitle_tracks:
+            if track.index in dropped:
+                continue
+            command += [f"-disposition:s:{position}", info.dispositions[track.sub_index]]
+            position += 1
 
         command += ["-progress", "pipe:1", output_path]
 
@@ -321,52 +328,6 @@ class FFmpeg:
             raise MediaError("Az ffmpeg hibával állt le:\n" + "\n".join(tail[-8:]))
 
     # ------------------------------------------------------------------
-    def strip_hungarian(self, mkv_path: str, info: MediaInfo, output_path: str,
-                        progress_cb=None) -> str:
-        """Kiszedi az ÖSSZES magyar felirat sávot az MKV-ból, újat nem tesz be.
-
-        Akkor kell, ha a felirat külön .srt fájlként él a videó mellett: így
-        nem marad bent egy régi, felesleges magyar sáv a lejátszó listájában.
-        Videó és hang bitre pontosan másolódik.
-        """
-        dropped = [t.index for t in info.subtitle_tracks if t.is_hungarian]
-        if not dropped:
-            return ""
-
-        for track in info.subtitle_tracks:
-            if track.is_hungarian:
-                log.info("Magyar sáv eltávolítása az MKV-ból: %s", track.label)
-
-        command = [self.ffmpeg, "-y", "-loglevel", "error", "-nostats", "-i", mkv_path, "-map", "0"]
-        for index in dropped:
-            command += ["-map", f"-0:{index}"]
-        command += ["-c", "copy", "-map_chapters", "0", "-progress", "pipe:1", output_path]
-
-        log.debug("Sávtisztítás parancs: %s", " ".join(command))
-        self._run_with_progress(command, info.duration, progress_cb)
-
-        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-            raise MediaError("A sávtisztítás nem hozott létre érvényes fájlt.")
-        return output_path
-
-    def verify_stripped(self, path: str, expected_duration: float) -> bool:
-        """Ellenőrzés: tényleg nincs már magyar sáv, és ép a fájl?"""
-        try:
-            info = self.probe(path)
-        except MediaError as exc:
-            log.error("Az elkészült fájl nem olvasható: %s", exc)
-            return False
-        if info.has_hungarian:
-            log.error("Ellenőrzés bukott: még mindig van magyar sáv a fájlban.")
-            return False
-        if expected_duration > 0 and abs(info.duration - expected_duration) > 2.0:
-            log.error("Ellenőrzés bukott: a hossz eltér (%.1f mp helyett %.1f mp).",
-                      expected_duration, info.duration)
-            return False
-        log.info("Ellenőrzés rendben: nincs magyar sáv az MKV-ban, a felirat külön fájlban van.")
-        return True
-
-    # ------------------------------------------------------------------
     def verify_muxed(self, path: str, expected_duration: float) -> bool:
         """Ellenőrzés muxolás után: tényleg bent van a magyar sáv, ép a fájl?"""
         try:
@@ -386,7 +347,10 @@ class FFmpeg:
             )
             return False
 
-        track = hungarian[-1]
+        track = info.subtitle_tracks[0]
+        if not (track.is_hungarian and track.is_default):
+            log.error("Ellenőrzés bukott: nem a magyar az első, alapértelmezett felirat sáv.")
+            return False
         log.info(
             "Ellenőrzés rendben: '%s' (%s), alapértelmezett: %s",
             track.title, track.language, "igen" if track.is_default else "nem",

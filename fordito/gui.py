@@ -20,7 +20,7 @@ from . import BUILD_SZAM, logsetup, updater
 from .config import Settings, TRACK_TITLE
 from .logsetup import get_logger
 from .media import FFmpeg, MediaError, pick_best_track
-from .pipeline import (MUXABLE_EXTENSIONS, SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, Callbacks,
+from .pipeline import (SUBTITLE_EXTENSIONS, VIDEO_EXTENSIONS, Callbacks,
                        JobResult, JobStatus, Pipeline, find_sidecar_subtitle)
 from .subtitles import load_document
 from .translator import Translator, suggest_protected_terms
@@ -668,8 +668,7 @@ class App(ctk.CTk):
         log.info("#" * 70)
         log.info("INDÍTÁS – %d fájl a kipipált %d közül, mód: %s, motor: %s",
                  len(self.active_paths), len(self.queue_paths), self.mode, self.settings.engine)
-        log.info("Beillesztés MKV-be: %s | alapértelmezett sáv: %s | eredeti felülírása: %s",
-                 self.settings.mux_into_mkv, self.settings.set_as_default, self.settings.replace_original)
+        log.info("Eredeti felülírása: %s", self.settings.replace_original)
         log.info("#" * 70)
 
         self.worker = threading.Thread(target=self._run, args=(chosen_track,),
@@ -773,9 +772,8 @@ class App(ctk.CTk):
             text=f"Kész!  {len(ok)} sikeres, {len(skipped)} kihagyott, {len(failed)} hibás  ·  {human_time(elapsed)}")
 
         lines = [f"Elkészült {len(ok)} fájl {human_time(elapsed)} alatt."]
-        if self.settings.mux_into_mkv and any(r.path.lower().endswith(MUXABLE_EXTENSIONS)
-                                              for r in ok):
-            lines.append(f"\nA magyar felirat „{TRACK_TITLE}” néven bekerült az MKV fájlokba, "
+        if any(r.video_path for r in ok):
+            lines.append(f"\nA magyar felirat „{TRACK_TITLE}” néven bekerült a videókba, "
                          "alapértelmezett sávként.")
         if skipped:
             lines.append(f"\nKihagyva ({len(skipped)}):")
@@ -1077,10 +1075,10 @@ class SettingsWindow(ctk.CTkToplevel):
 
         tabs = ctk.CTkTabview(self, fg_color=COL_CARD, segmented_button_selected_color=COL_ACCENT)
         tabs.grid(row=0, column=0, padx=16, pady=16, sticky="nsew")
-        for name in ("MKV kimenet", "Fordítás", "Nevek", "Haladó"):
+        for name in ("Videó kimenet", "Fordítás", "Nevek", "Haladó"):
             tabs.add(name)
 
-        self._build_output(tabs.tab("MKV kimenet"))
+        self._build_output(tabs.tab("Videó kimenet"))
         self._build_translation(tabs.tab("Fordítás"))
         self._build_glossary(tabs.tab("Nevek"))
         self._build_advanced(tabs.tab("Haladó"))
@@ -1127,22 +1125,9 @@ class SettingsWindow(ctk.CTkToplevel):
 
     # ------------------------------------------------------------------
     def _build_output(self, tab) -> None:
-        self._switch(tab, "A magyar felirat kerüljön bele az MKV-be is", "mux_into_mkv",
-                     f"Alapból KI. A felirat külön .srt fájlként kerül a videó mellé – azt minden "
-                     f"lejátszó megjeleníti. Bekapcsolva a felirat az MKV-ba is bekerül "
-                     f"„{TRACK_TITLE}” néven, alapértelmezett sávként (videó és hang újrakódolás "
-                     "nélkül másolódik). Csak MKV-nál: MP4 és más formátum esetén a videóhoz nem nyúl, "
-                     "a felirat mindig külön fájlba kerül.")
-        self._switch(tab, "Régi magyar sávok kiszedése az MKV-ból", "remove_hungarian_tracks",
-                     "Fordítás után eltávolítja a fájlban lévő ÖSSZES magyar felirat sávot, hogy "
-                     "csak a most készült külön .srt maradjon. Így nincs két magyar felirat a "
-                     "lejátszó listájában.")
-        self._switch(tab, "Legyen ez az alapértelmezett felirat sáv", "set_as_default",
-                     "Lejátszáskor automatikusan a magyar felirat indul, a többiről lekerül az "
-                     "alapértelmezett jelölés.")
-        self._switch(tab, "Az eredeti MKV fájl felülírása", "replace_original",
+        self._switch(tab, "Az eredeti videófájl felülírása", "replace_original",
                      "Bekapcsolva ugyanaz a fájl marad, csak bővül a magyar sávval. Kikapcsolva "
-                     "külön „.hu.mkv” fájl készül mellé.")
+                     "külön „_magyar_felirat” végű videófájl készül mellé.")
         self._switch(tab, "Biztonsági másolat az eredetiről (.bak)", "keep_backup",
                      "Felülírás előtt az eredeti fájl átnevezve megmarad. Sok helyet foglal.")
         self._switch(tab, "A külön _magyar_felirat.srt fájl is maradjon meg", "keep_srt_file",
@@ -1289,8 +1274,8 @@ class SettingsWindow(ctk.CTkToplevel):
         messagebox.showinfo("Gyorsítótár", f"{count} tárolt fordítás törölve.", parent=self)
 
     def _save(self) -> None:
-        for attribute in ("mux_into_mkv", "set_as_default", "replace_original", "keep_backup",
-                          "keep_srt_file", "remove_hungarian_tracks", "recursive_scan",
+        for attribute in ("replace_original", "keep_backup",
+                          "keep_srt_file", "recursive_scan",
                           "merge_sentences", "use_cache"):
             variable = getattr(self, f"var_{attribute}", None)
             if variable is not None:

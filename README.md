@@ -1,12 +1,12 @@
 # Magyar Felirat Fordító
 
-Videók (MKV, MP4, AVI, MOV, WEBM, …) feliratát fordítja **magyarra**. MKV-nál a kész
-feliratot kérésre vissza is teszi a videóba alapértelmezett sávként. **Nincs regisztráció, nincs API kulcs, nincs bejelentkezés, nincs
+Videók (MKV, MP4, AVI, MOV, WEBM, …) feliratát fordítja **magyarra**. A kész
+feliratot mindig vissza is teszi a videóba alapértelmezett sávként. **Nincs regisztráció, nincs API kulcs, nincs bejelentkezés, nincs
 telepítendő modell** – letöltöd az exe-t, elindítod, működik. A leggyengébb laptopon is,
 mert minden munkát online fordítószolgáltatások végeznek.
 
 ```
-  MKV  ──►  felirat kinyerése  ──►  fordítás magyarra  ──►  vissza az MKV-be
+  MKV  ──►  felirat kinyerése  ──►  fordítás magyarra  ──►  vissza a videóba
                                                             „Magyar felirat” (hun)
                                                             alapértelmezett sávként
 ```
@@ -18,10 +18,10 @@ mert minden munkát online fordítószolgáltatások végeznek.
 | | |
 |---|---|
 | **Egy fájl vagy egész mappa** | Tallózol egy videót, vagy ráengeded egy mappára – minden videót lefordít benne, almappákkal együtt. |
-| **MP4 és más formátumok** | MP4, M4V, MOV, AVI, WEBM, WMV, TS, MPG, FLV is megy. Ezeknél a videóhoz nem nyúl: a magyar felirat külön `_magyar_felirat.srt` fájlba kerül mellé. Ha a videóban nincs beágyazott felirat, a mellette lévő `film.srt` / `film.en.srt` fájlt fordítja le. |
+| **MP4 és más formátumok** | MP4, M4V, MOV, AVI, WEBM, WMV, TS, MPG, FLV is megy, a felirat ezekbe is bekerül. Az MP4/MOV/WEBM formátuma marad; az AVI, WMV, TS, MPG, FLV nem tud szöveges feliratot tárolni, ezért ezekből veszteségmentesen MKV lesz. Ha a videóban nincs beágyazott felirat, a mellette lévő `film.srt` / `film.en.srt` fájlt fordítja le. |
 | **Két fordítómotor, kulcs nélkül** | Microsoft fordító (nyelvi modell alapú, ez az elsődleges) és Google Translate (tartalék). Egyikhez sem kell fiók. |
 | **Mondategyesítés** | Ha egy mondat két-három felirat között törik ketté, a fordító **egyben** kapja meg, és a kész magyar mondatot osztjuk vissza a feliratokra. Ez a legnagyobb minőségbeli ugrás. |
-| **Visszaírás az MKV-be** | A kész felirat bekerül a videóba `Magyar felirat` néven, `hun` nyelvcímkével, alapértelmezett sávként. Videó és hang bitre pontosan másolódik – nincs újrakódolás. |
+| **Visszaírás a videóba** | A kész felirat bekerül a videóba `Magyar felirat` néven, `hun` nyelvcímkével, alapértelmezett sávként. Videó és hang bitre pontosan másolódik – nincs újrakódolás. |
 | **Formázás megőrzése** | Dőlt betű, `{\an8}` pozicionálás, dalszöveg-jelek, párbeszédjelek, ASS tipográfia mind túléli a fordítást. |
 | **Névszótár** | Szereplőnevek és visszatérő kifejezések végig ugyanúgy szerepelnek. |
 | **Profi sortördelés** | Max. 42 karakter soronként, két sorban, mondathatáron törve. |
@@ -146,10 +146,10 @@ mássalhangzó előtt *a*.
 
 ## Beállítások
 
-### MKV kimenet
-- **A magyar felirat kerüljön bele az MKV-be** – be
-- **Legyen ez az alapértelmezett felirat sáv** – be (a többiről lekerül a jelölés)
-- **Az eredeti MKV felülírása** – be. Kikapcsolva külön `.hu.mkv` készül.
+### Videó kimenet
+- A magyar felirat **mindig** bekerül a videóba, első és alapértelmezett sávként
+  (nem kapcsolható ki; a régi magyar sávok lecserélődnek).
+- **Az eredeti videófájl felülírása** – be. Kikapcsolva külön `_magyar_felirat` végű videó készül.
 - **Biztonsági másolat (.bak)** – ki (sok helyet foglal)
 - **Kihagyás, ha már van benne magyar felirat** – be. Ezért bármikor újraindítható
   egy félbehagyott mappa: a kész részeket átugorja.
@@ -195,7 +195,7 @@ Most minden kérés külön megy: a hozzárendelés matematikailag sem tud elcs�
 | Formázás | `\n`-t szóközre cserélte, tageket ráküldte a fordítóra | Leválasztja, majd visszateszi |
 | Hibás sor | Üresen maradt | Tartalék motor javítja |
 | Kötegelt mód | Nincs | Egész mappa, almappákkal |
-| Visszaírás MKV-be | Nincs | Alapértelmezett `Magyar felirat` sáv |
+| Visszaírás a videóba | Nincs | Alapértelmezett `Magyar felirat` sáv |
 | Napló | Csak a képernyőn | `fordito_debug.log`, forgatott, teljes |
 | API kulcs | Kellett (OpenAI) | Nem kell semmi |
 

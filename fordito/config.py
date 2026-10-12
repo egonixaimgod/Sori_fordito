@@ -56,14 +56,10 @@ class Settings:
     # Szabadon szerkeszthető, és a program fel is tudja ajánlani a fájlból.
     protected_terms: list = field(default_factory=lambda: list(DEFAULT_PROTECTED_TERMS))
 
-    # --- MKV kezelés ---
-    # ALAPBÓL KI: a felirat külön .srt fájlként él a videó mellett, mert azt
-    # minden lejátszó megjeleníti. Bekapcsolva a felirat az MKV-ba is bekerül.
-    mux_into_mkv: bool = False
-    # A régi magyar sávok kitakarítása az MKV-ból akkor is, ha nem muxolunk.
-    remove_hungarian_tracks: bool = True
-    set_as_default: bool = True          # a magyar sáv legyen az alapértelmezett
-    replace_original: bool = True        # az eredeti MKV felülírása a bővítettel
+    # --- Videó kimenet ---
+    # A magyar felirat MINDIG bekerül a videóba, alapértelmezett sávként
+    # (nem kapcsolható ki). A régi magyar sávok ilyenkor lecserélődnek.
+    replace_original: bool = True        # az eredeti videó felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
     # A külön .srt fájl megtartása a videó mellett. ALAPBÓL BE.
     #
@@ -124,14 +120,8 @@ class Settings:
         if from_version >= CONFIG_VERSION:
             return
         if from_version < 4:
-            # A felirat mostantól külön .srt fájlként él a videó mellett, és a
-            # magyar sáv kikerül az MKV-ból - így egyetlen magyar felirat van,
-            # az pedig minden lejátszóban megjelenik.
             self.keep_srt_file = True
-            self.mux_into_mkv = False
-            self.remove_hungarian_tracks = True
-            log.info("Beállítás frissítve: a felirat külön .srt fájlba kerül, "
-                     "a magyar sávot pedig kivesszük az MKV-ból.")
+            log.info("Beállítás frissítve: a külön .srt fájl is megmarad a videó mellett.")
         self.config_version = CONFIG_VERSION
         self.save()
 
