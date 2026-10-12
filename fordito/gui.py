@@ -668,7 +668,6 @@ class App(ctk.CTk):
         log.info("#" * 70)
         log.info("INDÍTÁS – %d fájl a kipipált %d közül, mód: %s, motor: %s",
                  len(self.active_paths), len(self.queue_paths), self.mode, self.settings.engine)
-        log.info("Eredeti felülírása: %s", self.settings.replace_original)
         log.info("#" * 70)
 
         self.worker = threading.Thread(target=self._run, args=(chosen_track,),
@@ -1075,10 +1074,9 @@ class SettingsWindow(ctk.CTkToplevel):
 
         tabs = ctk.CTkTabview(self, fg_color=COL_CARD, segmented_button_selected_color=COL_ACCENT)
         tabs.grid(row=0, column=0, padx=16, pady=16, sticky="nsew")
-        for name in ("Videó kimenet", "Fordítás", "Nevek", "Haladó"):
+        for name in ("Fordítás", "Nevek", "Haladó"):
             tabs.add(name)
 
-        self._build_output(tabs.tab("Videó kimenet"))
         self._build_translation(tabs.tab("Fordítás"))
         self._build_glossary(tabs.tab("Nevek"))
         self._build_advanced(tabs.tab("Haladó"))
@@ -1124,18 +1122,6 @@ class SettingsWindow(ctk.CTkToplevel):
                          wraplength=520, justify="left").pack(anchor="w", padx=18, pady=(2, 0))
 
     # ------------------------------------------------------------------
-    def _build_output(self, tab) -> None:
-        self._switch(tab, "Az eredeti videófájl felülírása", "replace_original",
-                     "Bekapcsolva ugyanaz a fájl marad, csak bővül a magyar sávval. Kikapcsolva "
-                     "külön „_magyar_felirat” végű videófájl készül mellé.")
-        self._switch(tab, "Biztonsági másolat az eredetiről (.bak)", "keep_backup",
-                     "Felülírás előtt az eredeti fájl átnevezve megmarad. Sok helyet foglal.")
-        self._switch(tab, "A külön _magyar_felirat.srt fájl is maradjon meg", "keep_srt_file",
-                     "Alapból KI: a felirat a videóban van. Bekapcsolva a külső fájl is "
-                     "megmarad, de akkor két magyar bejegyzés lesz a lejátszó listájában.")
-        self._switch(tab, "Almappák bejárása is", "recursive_scan",
-                     "Mappás módban az összes almappában megkeresi a videófájlokat.")
-
     def _build_translation(self, tab) -> None:
         self._switch(tab, "Feliratokon átnyúló mondatok egyben fordítása", "merge_sentences",
                      "Ha egy mondat két felirat között törik ketté, a fordító EGYBEN kapja meg, "
@@ -1154,6 +1140,8 @@ class SettingsWindow(ctk.CTkToplevel):
                      "évadánál is sokat gyorsít.")
 
     def _build_advanced(self, tab) -> None:
+        self._switch(tab, "Almappák bejárása is", "recursive_scan",
+                     "Mappás módban az összes almappában megkeresi a videófájlokat.")
         self._number(tab, "Párhuzamos Microsoft kérések", "bing_workers",
                      "8 a jó alapérték. Túl sok esetén a szolgáltatás átmenetileg korlátoz.")
         self._number(tab, "Párhuzamos Google kérések", "google_workers",
@@ -1272,8 +1260,7 @@ class SettingsWindow(ctk.CTkToplevel):
         messagebox.showinfo("Gyorsítótár", f"{count} tárolt fordítás törölve.", parent=self)
 
     def _save(self) -> None:
-        for attribute in ("replace_original", "keep_backup",
-                          "keep_srt_file", "recursive_scan",
+        for attribute in ("recursive_scan",
                           "merge_sentences", "use_cache"):
             variable = getattr(self, f"var_{attribute}", None)
             if variable is not None:

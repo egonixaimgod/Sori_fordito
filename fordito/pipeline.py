@@ -21,7 +21,7 @@ from .media import (FFmpeg, MediaError, MediaInfo, SubtitleTrack,
                     find_matching_track, pick_best_track)
 from .subtitles import load_document
 from .translator import TranslationStats, Translator
-from .util import Stopwatch, human_time, human_size
+from .util import Stopwatch, human_time, human_size, reset_mpc_subtitle_choice
 
 log = get_logger("folyamat")
 
@@ -331,32 +331,32 @@ class Pipeline:
     # ------------------------------------------------------------------
     def _embed(self, path: str, subtitle_path: str, info: MediaInfo,
                callbacks: Callbacks, result: JobResult) -> None:
-        """Beágyazás, utána a külön feliratfájl sorsa.
+        """A most lefordított felirat beágyazása első, alapértelmezett sávként.
 
-        A beágyazott sáv mellett a külön .srt csak zavart okoz: a lejátszók
-        (MPC, VLC) a külső fájlt részesítik előnyben, ezért két magyar felirat
-        jelenik meg a listában. Ezért keep_srt_file nélkül töröljük."""
+        Utána a külön feliratfájl törlődik (a tartalma már a videóban van), és az
+        MPC-HC megjegyzett sávválasztása is, hogy a lejátszó tényleg ezt indítsa."""
         self._mux(path, subtitle_path, info, callbacks, result)
-        if not getattr(self.settings, "keep_srt_file", False):
-            try:
-                os.remove(subtitle_path)
-                result.subtitle_path = ""
-                log.info("A külön feliratfájl törölve - a felirat a videóban van.")
-            except OSError as exc:
-                log.debug("A feliratfájl törlése nem sikerült: %s", exc)
+        try:
+            os.remove(subtitle_path)
+            result.subtitle_path = ""
+            log.info("A külön feliratfájl törölve - a felirat a videóban van.")
+        except OSError as exc:
+            log.debug("A feliratfájl törlése nem sikerült: %s", exc)
+        reset_mpc_subtitle_choice([path, result.video_path])
 
     def _mux(self, path: str, subtitle_path: str, info: MediaInfo,
              callbacks: Callbacks, result: JobResult) -> None:
-        """A magyar feliratot beleteszi a videóba alapértelmezett sávként."""
+        """A magyar feliratot beleteszi a videóba alapértelmezett sávként; az új fájl
+        az eredeti helyére lép."""
         callbacks.on_stage(f"„{TRACK_TITLE}” beillesztése a videóba...")
         folder = os.path.dirname(path) or "."
         base, extension = os.path.splitext(os.path.basename(path))
         # Ami nem tud szöveges feliratot tárolni (AVI, WMV, ...), abból MKV lesz.
         out_ext = extension if extension.lower() in MUXABLE_EXTENSIONS else ".mkv"
         temp_output = os.path.join(folder, f".{base}.fordito.tmp{out_ext}")
-        replace = getattr(self.settings, "replace_original", True)
-        final = os.path.join(folder, f"{base}{out_ext}" if replace else f"{base}{SUBTITLE_SUFFIX}{out_ext}")
-        if os.path.normcase(final) != os.path.normcase(path) and os.path.exists(final):
+        final = os.path.join(folder, f"{base}{out_ext}")
+        repacked = os.path.normcase(final) != os.path.normcase(path)
+        if repacked and os.path.exists(final):
             raise MediaError(f"A kimeneti fájl már létezik, nem írom felül: {final}")
 
         def mux_progress(fraction: float) -> None:
@@ -372,23 +372,11 @@ class Pipeline:
             if not self.ffmpeg.verify_muxed(temp_output, info.duration):
                 raise MediaError("Az elkészült videó nem ment át az ellenőrzésen.")
 
-            if replace:
-                backed_up = False
-                if getattr(self.settings, "keep_backup", False):
-                    backup = path + ".bak"
-                    if os.path.exists(backup):
-                        os.remove(backup)
-                    os.replace(path, backup)
-                    backed_up = True
-                    log.info("Biztonsági másolat: %s", os.path.basename(backup))
-                os.replace(temp_output, final)
-                if os.path.normcase(final) != os.path.normcase(path) and not backed_up:
-                    os.remove(path)  # átcsomagolás (pl. AVI -> MKV): az új lép a régi helyére
-                log.info("Az eredeti videó lecserélve a magyar sávval bővítettre: %s",
-                         os.path.basename(final))
-            else:
-                os.replace(temp_output, final)
-                log.info("Új fájl készült: %s", os.path.basename(final))
+            os.replace(temp_output, final)
+            if repacked:
+                os.remove(path)  # átcsomagolás (pl. AVI -> MKV): az új lép a régi helyére
+            log.info("Az eredeti videó lecserélve a magyar sávval bővítettre: %s",
+                     os.path.basename(final))
             result.video_path = final
 
         except Exception:

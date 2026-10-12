@@ -156,3 +156,48 @@ class Stopwatch:
 
     def reset(self) -> None:
         self.start = time.monotonic()
+
+
+_MPC_KEY = r"Software\MPC-HC\MPC-HC"
+
+
+def reset_mpc_subtitle_choice(video_paths: list[str], language: str = "hun") -> None:
+    """Az MPC-HC ne bírálja felül a videó alapértelmezett felirat sávját.
+
+    Az MPC-HC fájlonként megjegyzi a legutóbb választott feliratot, újranyitáskor
+    azt állítja vissza, és a kedvenc nyelvét (pl. eng) is a default sáv elé veszi.
+    Ezért töröljük a fájlhoz megjegyzett választást, és a magyart tesszük előre.
+    shortcut: csak a registry-s MPC-HC beállítást kezeli, az .ini-s (hordozható) módot nem.
+    """
+    if os.name != "nt":
+        return
+    import winreg
+
+    targets = {os.path.normcase(os.path.abspath(p)) for p in video_paths}
+    access = winreg.KEY_READ | winreg.KEY_SET_VALUE
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _MPC_KEY + r"\MediaHistory") as history:
+            count = winreg.QueryInfoKey(history)[0]
+            for name in [winreg.EnumKey(history, i) for i in range(count)]:
+                with winreg.OpenKey(history, name, 0, access) as entry:
+                    values = [winreg.EnumValue(entry, i) for i in range(winreg.QueryInfoKey(entry)[1])]
+                    filename = next((v[1] for v in values if v[0] == "Filename"), "")
+                    if os.path.normcase(os.path.abspath(filename)) not in targets:
+                        continue
+                    # A megjegyzett sávszám és a hozzáadott külső feliratfájlok (Sub001, ...).
+                    for value_name, _, _ in values:
+                        if value_name == "SubtitleTrackIndex" or (
+                                value_name.startswith("Sub") and value_name[3:].isdigit()):
+                            winreg.DeleteValue(entry, value_name)
+    except OSError:
+        pass  # nincs MPC-HC, vagy nincs előzmény
+
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _MPC_KEY + r"\Settings", 0, access) as settings:
+            order = str(winreg.QueryValueEx(settings, "SubtitlesLanguageOrder")[0])
+            codes = [c for c in order.replace(",", " ").replace(";", " ").split() if c.lower() != language]
+            new_order = " ".join([language, *codes])
+            if new_order != order:
+                winreg.SetValueEx(settings, "SubtitlesLanguageOrder", 0, winreg.REG_SZ, new_order)
+    except OSError:
+        pass

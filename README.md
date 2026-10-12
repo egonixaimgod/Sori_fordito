@@ -77,7 +77,7 @@ Az eseménynapló élőben mutat mindent.
 
 | Fájl | Mi ez |
 |---|---|
-| `Anime_S01E01.mkv` | Az eredeti videó, benne a `Magyar felirat` sávval, első és alapértelmezett sávként. A külön `.srt` beágyazás után törlődik (bekapcsolható, hogy megmaradjon). |
+| `Anime_S01E01.mkv` | Az eredeti videó, benne a `Magyar felirat` sávval, első és alapértelmezett sávként. A külön `.srt` beágyazás után törlődik. |
 
 ---
 
@@ -145,11 +145,12 @@ mássalhangzó előtt *a*.
 
 ## Beállítások
 
-### Videó kimenet
+### Felirat a videóban (nem állítható, mindig így működik)
+- Az eredeti fájl helyére a magyar sávval bővített videó lép, külön `.srt` nem marad mellette.
 - A magyar felirat **mindig** bekerül a videóba, első és alapértelmezett sávként
   (nem kapcsolható ki; a régi magyar sávok lecserélődnek).
-- **Az eredeti videófájl felülírása** – be. Kikapcsolva külön `_magyar_felirat` végű videó készül.
-- **Biztonsági másolat (.bak)** – ki (sok helyet foglal)
+- Az MPC-HC fájlonként megjegyzett feliratválasztását törli, és a magyart teszi az első
+  kedvenc feliratnyelvnek, hogy a lejátszó tényleg a most fordított sávot indítsa.
 - **Kihagyás, ha már van benne magyar felirat** – be. Ezért bármikor újraindítható
   egy félbehagyott mappa: a kész részeket átugorja.
 
