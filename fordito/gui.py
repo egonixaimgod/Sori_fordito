@@ -1131,10 +1131,8 @@ class SettingsWindow(ctk.CTkToplevel):
         self._switch(tab, "Biztonsági másolat az eredetiről (.bak)", "keep_backup",
                      "Felülírás előtt az eredeti fájl átnevezve megmarad. Sok helyet foglal.")
         self._switch(tab, "A külön _magyar_felirat.srt fájl is maradjon meg", "keep_srt_file",
-                     "Alapból BE, és jó okkal: van olyan lejátszó, amelyik a beágyazott sávot "
-                     "nem teszi ki, a külső .srt fájlt viszont hibátlanul megjeleníti. Így a "
-                     "felirat biztosan látszik. Cserébe két magyar bejegyzés lesz a lejátszó "
-                     "listájában – a lejátszó a külsőt választja, és az működik.")
+                     "Alapból KI: a felirat a videóban van. Bekapcsolva a külső fájl is "
+                     "megmarad, de akkor két magyar bejegyzés lesz a lejátszó listájában.")
         self._switch(tab, "Almappák bejárása is", "recursive_scan",
                      "Mappás módban az összes almappában megkeresi a videófájlokat.")
 

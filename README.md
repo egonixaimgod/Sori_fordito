@@ -77,8 +77,7 @@ Az eseménynapló élőben mutat mindent.
 
 | Fájl | Mi ez |
 |---|---|
-| `Anime_S01E01.mkv` | Az eredeti videó, benne a `Magyar felirat` sávval, alapértelmezettként |
-| `Anime_S01E01.hu.srt` | Ugyanaz külön feliratfájlként (a lejátszók a `.hu` végződésből felismerik) |
+| `Anime_S01E01.mkv` | Az eredeti videó, benne a `Magyar felirat` sávval, első és alapértelmezett sávként. A külön `.srt` beágyazás után törlődik (bekapcsolható, hogy megmaradjon). |
 
 ---
 
@@ -173,7 +172,7 @@ Igen, több okból:
 - Az új fájl előbb ideiglenes néven készül el, és csak akkor lép az eredeti helyére, ha
   **átment az ellenőrzésen** (benne van-e a magyar sáv, egyezik-e a játékidő).
 - Ha bármi hiba történik, az ideiglenes fájl törlődik, az eredeti érintetlen marad.
-- A `.hu.srt` mindig megmarad a videó mellett, tehát a fordítás sosem vész el.
+- A külön `.srt` csak sikeres, ellenőrzött beágyazás után törlődik, tehát a fordítás sosem vész el.
 
 ---
 

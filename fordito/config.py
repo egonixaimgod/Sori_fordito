@@ -35,7 +35,7 @@ DEFAULT_PROTECTED_TERMS = [
 # A beállításfájl változata. Ha nő, a load() egyszeri átállítást végez azokon
 # a kapcsolókon, amiknek megváltozott az alapértéke - különben a régi mentés
 # csendben felülírná az újat, és a felhasználó a régi viselkedést kapná.
-CONFIG_VERSION = 4
+CONFIG_VERSION = 5
 
 
 @dataclass
@@ -61,17 +61,9 @@ class Settings:
     # (nem kapcsolható ki). A régi magyar sávok ilyenkor lecserélődnek.
     replace_original: bool = True        # az eredeti videó felülírása a bővítettel
     keep_backup: bool = False            # .bak másolat az eredetiről
-    # A külön .srt fájl megtartása a videó mellett. ALAPBÓL BE.
-    #
-    # Miért? Mert a beágyazott sávot nem minden lejátszó teszi ki. Mérésekkel
-    # igazolt eset: az MKV-ba muxolt magyar sáv tökéletes (kiolvasható és
-    # renderelhető), a lejátszó mégsem jelenítette meg - ugyanazt a szöveget
-    # külső .srt fájlból viszont hibátlanul kiírta.
-    #
-    # A külső fájl tehát a biztos út. A beágyazott sáv emellett is megmarad
-    # (TV-n, telefonon, Plexen az a hasznos), csak a lejátszó listájában
-    # megjelenik két magyar bejegyzés. Ez a kisebbik rossz.
-    keep_srt_file: bool = True
+    # A külön .srt fájl megtartása a videó mellett. ALAPBÓL KI: a felirat a
+    # videóban van, a külső fájl csak második magyar bejegyzés lenne a lejátszóban.
+    keep_srt_file: bool = False
     # Megjegyzés: a program szándékosan NEM dönt helyetted arról, melyik fájlt
     # kell lefordítani. Minden fájl kipipálva indul a munkalistán, a többi
     # a te dolgod - így soha nem marad ki valami magától.
@@ -119,9 +111,11 @@ class Settings:
         """Régi beállításfájl igazítása az új alapértékekhez."""
         if from_version >= CONFIG_VERSION:
             return
-        if from_version < 4:
-            self.keep_srt_file = True
-            log.info("Beállítás frissítve: a külön .srt fájl is megmarad a videó mellett.")
+        if from_version < 5:
+            # A felirat a videóban van; a mellette hagyott .srt második magyar
+            # bejegyzésként jelenne meg a lejátszóban.
+            self.keep_srt_file = False
+            log.info("Beállítás frissítve: a külön .srt fájl beágyazás után törlődik.")
         self.config_version = CONFIG_VERSION
         self.save()
 

@@ -286,9 +286,10 @@ class FFmpeg:
             "-metadata:s:s:0", f"title={TRACK_TITLE}",
         ]
 
-        # 5. A magyar alapértelmezett ÉS kényszerített, a többiről mindkét jelölés
-        #    lekerül - így a forced sávot előnyben részesítő lejátszó is ezt indítja.
-        command += ["-disposition:s:0", "default+forced"]
+        # 5. A magyar az alapértelmezett; a többiről a default és a forced is lekerül.
+        #    A magyarra NEM tehetünk forced-ot: sok lejátszó egy forced sávból csak
+        #    a "kényszerített" sorokat mutatja, vagyis szinte semmit.
+        command += ["-disposition:s:0", "default"]
         position = 1
         for track in info.subtitle_tracks:
             if track.index in dropped:
@@ -351,7 +352,7 @@ class FFmpeg:
             return False
 
         track = info.subtitle_tracks[0]
-        if not (track.is_hungarian and track.is_default):
+        if not (track.is_hungarian and track.is_default and not track.is_forced):
             log.error("Ellenőrzés bukott: nem a magyar az első, alapértelmezett felirat sáv.")
             return False
         rivals = [t.label for t in info.subtitle_tracks[1:] if t.is_default or t.is_forced]
