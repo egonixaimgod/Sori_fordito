@@ -297,6 +297,11 @@ class FFmpeg:
             command += [f"-disposition:s:{position}", info.dispositions[track.sub_index]]
             position += 1
 
+        # 6. Szigorú időrend. Enélkül az ffmpeg a ritka (nagy szünetekkel jövő)
+        #    feliratcsomagokat percekkel később írja a fájlba, mint a hozzájuk tartozó
+        #    képet - a lejátszó elkésettnek veszi és eldobja őket: üres képernyő.
+        command += ["-max_interleave_delta", "0"]
+
         command += ["-progress", "pipe:1", output_path]
 
         log.info("Muxolás indul -> %s", os.path.basename(output_path))
@@ -359,11 +364,39 @@ class FFmpeg:
         if rivals:
             log.error("Ellenőrzés bukott: más sáv is alapértelmezett/kényszerített: %s", rivals)
             return False
+        late = self._late_subtitle_packet(path, track.index)
+        if late is not None:
+            log.error("Ellenőrzés bukott: a(z) %.1f mp-es magyar sor túl későn van a fájlban, "
+                      "a lejátszó eldobná.", late)
+            return False
         log.info(
             "Ellenőrzés rendben: '%s' (%s), alapértelmezett: %s",
             track.title, track.language, "igen" if track.is_default else "nem",
         )
         return True
+
+    def _late_subtitle_packet(self, path: str, stream_index: int,
+                              tolerance: float = 5.0) -> float | None:
+        """Az első feliratcsomag ideje, amely a fájlban a nála jóval későbbi
+        képkockák UTÁN áll (rossz interleave), vagy None, ha minden rendben."""
+        command = [self.ffprobe, "-v", "error", "-show_entries", "packet=stream_index,pts_time",
+                   "-of", "csv=p=0", path]
+        result = run_process(command, timeout=600)
+        if result.returncode != 0:
+            raise MediaError(f"Az ffprobe nem tudta végigolvasni a fájlt:\n{result.stderr.strip()[:400]}")
+        newest = 0.0  # a fájlban eddig látott legkésőbbi csomag (bármely más sávból)
+        for line in result.stdout.splitlines():
+            index, _, pts = line.partition(",")
+            try:
+                index_value, time_value = int(index), float(pts)
+            except ValueError:
+                continue  # pts nélküli csomag
+            if index_value == stream_index:
+                if time_value < newest - tolerance:
+                    return time_value
+            else:
+                newest = max(newest, time_value)
+        return None
 
 
 # =========================================================================
