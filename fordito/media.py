@@ -168,7 +168,9 @@ class FFmpeg:
                         pass
             info.subtitle_tracks.append(track)
             # A meglévő flag-eket megjegyezzük, hogy muxoláskor ne vesszenek el.
-            flags = [name for name in ("forced", "hearing_impaired", "visual_impaired", "comment")
+            # A "forced" szándékosan nincs köztük: azt a lejátszók a default elé
+            # veszik, és akkor nem a magyar sáv indulna el.
+            flags = [name for name in ("hearing_impaired", "visual_impaired", "comment")
                      if disposition.get(name)]
             info.dispositions.append("+".join(flags) if flags else "0")
             sub_counter += 1
@@ -284,8 +286,9 @@ class FFmpeg:
             "-metadata:s:s:0", f"title={TRACK_TITLE}",
         ]
 
-        # 5. Alapértelmezett sáv: a magyar kapja, a többiről levesszük a jelölést.
-        command += ["-disposition:s:0", "default"]
+        # 5. A magyar alapértelmezett ÉS kényszerített, a többiről mindkét jelölés
+        #    lekerül - így a forced sávot előnyben részesítő lejátszó is ezt indítja.
+        command += ["-disposition:s:0", "default+forced"]
         position = 1
         for track in info.subtitle_tracks:
             if track.index in dropped:
@@ -350,6 +353,10 @@ class FFmpeg:
         track = info.subtitle_tracks[0]
         if not (track.is_hungarian and track.is_default):
             log.error("Ellenőrzés bukott: nem a magyar az első, alapértelmezett felirat sáv.")
+            return False
+        rivals = [t.label for t in info.subtitle_tracks[1:] if t.is_default or t.is_forced]
+        if rivals:
+            log.error("Ellenőrzés bukott: más sáv is alapértelmezett/kényszerített: %s", rivals)
             return False
         log.info(
             "Ellenőrzés rendben: '%s' (%s), alapértelmezett: %s",
