@@ -67,6 +67,13 @@ def find_sidecar_subtitle(video_path: str) -> Optional[str]:
         candidates.append((rank, os.path.join(folder, name)))
     return min(candidates)[1] if candidates else None
 
+# Amíg egy másik program nyitva tartja a videót (torrentkliens seedeli,
+# lejátszó játssza), a Windows nem engedi lecserélni.
+LOCKED_MESSAGE = (
+    "A videót most egy másik program használja, ezért nem cserélhető le a feliratos "
+    "változatra. Zárd be a lejátszót; ha torrentből van, a torrentkliensben állítsd le "
+    "vagy vedd ki a listából (a fájl maradjon meg), aztán indítsd újra a fordítást.")
+
 # A folyamat szakaszai és súlyuk a haladásjelzőn.
 STAGE_EXTRACT = 0.05
 STAGE_TRANSLATE = 0.80
@@ -211,6 +218,7 @@ class Pipeline:
         temp_dir = tempfile.mkdtemp(prefix="fordito_")
         try:
             # --- 1. Sávok elemzése -------------------------------------
+            self._check_replaceable(path)
             callbacks.on_stage("Felirat sávok elemzése...")
             callbacks.on_progress(0.01)
             info = self.ffmpeg.probe(path)
@@ -344,6 +352,24 @@ class Pipeline:
             log.debug("A feliratfájl törlése nem sikerült: %s", exc)
         reset_mpc_subtitle_choice([path, result.video_path])
 
+    @staticmethod
+    def _check_replaceable(path: str) -> None:
+        """Még a fordítás ELŐTT kiderül, ha a videó a végén nem lesz lecserélhető -
+        ne a kész fordítás után derüljön ki, hogy hiába dolgoztunk."""
+        folder = os.path.dirname(path) or "."
+        # A beágyazás teljes másolatot ír az eredeti mellé, és csak utána cserél.
+        needed = os.path.getsize(path) + 50 * 1024 * 1024
+        free = shutil.disk_usage(folder).free
+        if free < needed:
+            raise MediaError(
+                f"Nincs elég szabad hely a(z) {os.path.splitdrive(os.path.abspath(folder))[0]} "
+                f"meghajtón: {human_size(needed)} kell, de csak {human_size(free)} szabad. "
+                "Szabadíts fel helyet, és indítsd újra a fordítást.")
+        try:
+            os.rename(path, path)  # önmagára nevezés: zárolt fájlnál PermissionError
+        except PermissionError as exc:
+            raise MediaError(LOCKED_MESSAGE) from exc
+
     def _mux(self, path: str, subtitle_path: str, info: MediaInfo,
              callbacks: Callbacks, result: JobResult) -> None:
         """A magyar feliratot beleteszi a videóba alapértelmezett sávként; az új fájl
@@ -358,25 +384,6 @@ class Pipeline:
         repacked = os.path.normcase(final) != os.path.normcase(path)
         if repacked and os.path.exists(final):
             raise MediaError(f"A kimeneti fájl már létezik, nem írom felül: {final}")
-        # A beágyazás teljes másolatot ír az eredeti mellé, és csak utána cserél.
-        # Ha nem fér el, az ffmpeg egy érthetetlen "No space left on device"-szal állna le.
-        needed = os.path.getsize(path) + 50 * 1024 * 1024
-        free = shutil.disk_usage(folder).free
-        if free < needed:
-            raise MediaError(
-                f"Nincs elég szabad hely a(z) {os.path.splitdrive(os.path.abspath(folder))[0]} "
-                f"meghajtón: {human_size(needed)} kell, de csak {human_size(free)} szabad. "
-                "Szabadíts fel helyet, és indítsd újra - a fordítás megmarad, másodpercek alatt kész lesz.")
-        # Amíg egy másik program nyitva tartja a videót (torrentkliens seedeli,
-        # lejátszó játssza), a Windows nem engedi lecserélni.
-        locked = MediaError(
-            "A videót most egy másik program használja, ezért nem cserélhető le a feliratos "
-            "változatra. Zárd be a lejátszót; ha torrentből van, a torrentkliensben állítsd le "
-            "vagy vedd ki a listából (a fájl maradjon meg), aztán indítsd újra a fordítást.")
-        try:
-            os.rename(path, path)  # önmagára nevezés: zárolt fájlnál PermissionError
-        except PermissionError as exc:
-            raise locked from exc
 
         def mux_progress(fraction: float) -> None:
             callbacks.on_progress(STAGE_EXTRACT + STAGE_TRANSLATE + STAGE_MUX * fraction)
@@ -393,8 +400,8 @@ class Pipeline:
 
             try:
                 os.replace(temp_output, final)
-            except PermissionError as exc:  # a fenti próba óta nyitotta meg valami
-                raise locked from exc
+            except PermissionError as exc:  # az induláskori próba óta nyitotta meg valami
+                raise MediaError(LOCKED_MESSAGE) from exc
             if repacked:
                 os.remove(path)  # átcsomagolás (pl. AVI -> MKV): az új lép a régi helyére
             log.info("Az eredeti videó lecserélve a magyar sávval bővítettre: %s",
