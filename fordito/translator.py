@@ -84,6 +84,20 @@ class TranslationStats:
         )
 
 
+_LATIN_WORDS = re.compile(r"[a-z']+")
+
+
+def looks_untranslated(source: str, result: str) -> bool:
+    """A motor fordítás helyett (szinte) szó szerint az eredetit adta vissza?
+
+    A Microsoft fordítója néha ezt teszi egy-egy mondattal; ilyenkor a sort a
+    tartalék motor kapja meg, különben angolul maradna a magyar feliratban.
+    shortcut: csak latin betűs forrásnál működik, a japánul maradt sort nem veszi észre.
+    """
+    words = _LATIN_WORDS.findall(source.lower())
+    return len(words) >= 4 and " ".join(words) in " ".join(_LATIN_WORDS.findall(result.lower()))
+
+
 def detect_language(texts: list[str], track_language: str = "") -> str:
     """A forrásnyelv megállapítása a sáv címkéjéből, illetve az írásjelekből."""
     code = LANG_MAP.get((track_language or "").lower(), (track_language or "").lower()[:2])
@@ -520,7 +534,7 @@ class Translator:
             still_missing: list[int] = []
             for offset, index in enumerate(pending):
                 value = produced[offset] if offset < len(produced) else ""
-                if value.strip():
+                if value.strip() and not looks_untranslated(unique_texts[index], value):
                     translations[index] = value.strip()
                     stats.from_primary += 1
                 else:

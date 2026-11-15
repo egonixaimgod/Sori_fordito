@@ -192,12 +192,20 @@ def reset_mpc_subtitle_choice(video_paths: list[str], language: str = "hun") -> 
     except OSError:
         pass  # nincs MPC-HC, vagy nincs előzmény
 
-    try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _MPC_KEY + r"\Settings", 0, access) as settings:
-            order = str(winreg.QueryValueEx(settings, "SubtitlesLanguageOrder")[0])
-            codes = [c for c in order.replace(",", " ").replace(";", " ").split() if c.lower() != language]
-            new_order = " ".join([language, *codes])
-            if new_order != order:
-                winreg.SetValueEx(settings, "SubtitlesLanguageOrder", 0, winreg.REG_SZ, new_order)
-    except OSError:
-        pass
+    # A beépített LAV Splitter saját nyelvszabálya (pl. "*:eng") az MPC-HC
+    # választása ELŐTT dönt: ha ott nem a magyar áll elöl, japán hangú videónál
+    # az angol sáv indul el, hiába első és alapértelmezett a magyar.
+    lav = _MPC_KEY + r"\Internal Filters\LAVSplitter"
+    for key_path, value_name, token, joiner in (
+            (_MPC_KEY + r"\Settings", "SubtitlesLanguageOrder", language, " "),
+            (lav, "prefSubLangs", language, " "),
+            (lav, "subtitleAdvanced", f"*:{language}", ",")):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, access) as key:
+                old = str(winreg.QueryValueEx(key, value_name)[0])
+                rest = [t for t in old.replace(",", " ").replace(";", " ").split() if t.lower() != token]
+                new = joiner.join([token, *rest])
+                if new != old:
+                    winreg.SetValueEx(key, value_name, 0, winreg.REG_SZ, new)
+        except OSError:
+            pass  # nincs ilyen beállítás: ott az MPC-HC alapértéke érvényes
