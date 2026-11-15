@@ -358,6 +358,25 @@ class Pipeline:
         repacked = os.path.normcase(final) != os.path.normcase(path)
         if repacked and os.path.exists(final):
             raise MediaError(f"A kimeneti fájl már létezik, nem írom felül: {final}")
+        # A beágyazás teljes másolatot ír az eredeti mellé, és csak utána cserél.
+        # Ha nem fér el, az ffmpeg egy érthetetlen "No space left on device"-szal állna le.
+        needed = os.path.getsize(path) + 50 * 1024 * 1024
+        free = shutil.disk_usage(folder).free
+        if free < needed:
+            raise MediaError(
+                f"Nincs elég szabad hely a(z) {os.path.splitdrive(os.path.abspath(folder))[0]} "
+                f"meghajtón: {human_size(needed)} kell, de csak {human_size(free)} szabad. "
+                "Szabadíts fel helyet, és indítsd újra - a fordítás megmarad, másodpercek alatt kész lesz.")
+        # Amíg egy másik program nyitva tartja a videót (torrentkliens seedeli,
+        # lejátszó játssza), a Windows nem engedi lecserélni.
+        locked = MediaError(
+            "A videót most egy másik program használja, ezért nem cserélhető le a feliratos "
+            "változatra. Zárd be a lejátszót; ha torrentből van, a torrentkliensben állítsd le "
+            "vagy vedd ki a listából (a fájl maradjon meg), aztán indítsd újra a fordítást.")
+        try:
+            os.rename(path, path)  # önmagára nevezés: zárolt fájlnál PermissionError
+        except PermissionError as exc:
+            raise locked from exc
 
         def mux_progress(fraction: float) -> None:
             callbacks.on_progress(STAGE_EXTRACT + STAGE_TRANSLATE + STAGE_MUX * fraction)
@@ -372,7 +391,10 @@ class Pipeline:
             if not self.ffmpeg.verify_muxed(temp_output, info.duration):
                 raise MediaError("Az elkészült videó nem ment át az ellenőrzésen.")
 
-            os.replace(temp_output, final)
+            try:
+                os.replace(temp_output, final)
+            except PermissionError as exc:  # a fenti próba óta nyitotta meg valami
+                raise locked from exc
             if repacked:
                 os.remove(path)  # átcsomagolás (pl. AVI -> MKV): az új lép a régi helyére
             log.info("Az eredeti videó lecserélve a magyar sávval bővítettre: %s",
